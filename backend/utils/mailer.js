@@ -55,4 +55,18 @@ Connectez-vous à la plateforme pour traiter cette demande.
     return transporter.sendMail(mailOptions);
 };
  
-module.exports = { sendStatusEmail, sendAdminNotification };
+
+const sendTransferEmail = async (email, prenom, ancienCommercial, nouveauCommercial) => {
+    await transporter.sendMail({
+        to: email,
+        subject: "Changement de votre commercial attitré",
+        html: `
+            <p>Bonjour ${prenom},</p>
+            <p>Votre commercial <strong>${ancienCommercial}</strong> n'est plus disponible.</p>
+            <p>Vous avez été assigné à <strong>${nouveauCommercial}</strong>, 
+               qui prend en charge votre dossier.</p>
+        `
+    });
+};
+module.exports = { sendStatusEmail, sendAdminNotification, sendTransferEmail };
+

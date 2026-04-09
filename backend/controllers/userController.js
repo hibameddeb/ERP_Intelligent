@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 const { logAction } = require('../utils/logs');
-const { sendStatusEmail } = require('../utils/mailer');
+const { sendStatusEmail ,sendTransferEmail} = require('../utils/mailer');
 
 exports.getUsers = async (req, res) => {
     const userRole = req.user.role;
@@ -8,8 +8,8 @@ exports.getUsers = async (req, res) => {
 
     try {
         let query = `
-            SELECT u.id, u.nom, u.prenom, u.email, u.role, u.num_tlp, u.est_actif,
-                   c.type_identifiant, c.identifiant, c.ville, c.activite
+           SELECT u.id, u.nom, u.prenom, u.email, u.role, u.num_tlp, u.est_actif,
+       c.type_identifiant, c.identifiant, c.ville, c.activite, c.id_commercial
             FROM utilisateur u
             LEFT JOIN client c ON u.id = c.id_utilisateur
             WHERE 1=1
@@ -17,8 +17,9 @@ exports.getUsers = async (req, res) => {
         const queryParams = [];
 
         if (userRole === 'COMMERCIAL') {
-            query += ` AND u.role = 'CLIENT'`;
-        } 
+            queryParams.push(userId);
+            query += ` AND u.role = 'CLIENT' AND c.id_commercial = $${queryParams.length}`;
+        }
         else if (userRole === 'COMPTABLE') {
             query += ` AND u.role IN ('CLIENT', 'COMMERCIAL')`;
         } 
@@ -58,6 +59,11 @@ exports.createUser = async (req, res) => {
     }  if (role === 'CLIENT') {
         return res.status(400).json({ 
             message: "La création d'un client doit passer par le flux de validation des demandes d'adhésion." 
+        });
+    }
+    if (role === 'ADMIN') {
+        return res.status(403).json({ 
+            message: "La création d'un compte administrateur est interdite via cette interface." 
         });
     }
 
@@ -119,23 +125,93 @@ exports.updateUser = async (req, res) => {
 
 exports.deleteUser = async (req, res) => {
     const { id } = req.params;
-    try {
-        const result = await pool.query('DELETE FROM utilisateur WHERE id = $1', [id]);
+    const { nouveau_commercial_id } = req.body; // ID du commercial cible
 
-        if (result.rowCount === 0) {
+    const db = await pool.connect();
+    try {
+        await db.query('BEGIN');
+
+        // 1. Vérifier le rôle et bloquer la suppression d'un ADMIN
+        const userCheck = await db.query(
+            'SELECT role, nom, prenom, email FROM utilisateur WHERE id = $1', [id]
+        );
+        if (userCheck.rows.length === 0)
             return res.status(404).json({ message: "Utilisateur non trouvé." });
+
+        const { role, nom, prenom, email } = userCheck.rows[0];
+
+        if (role === 'ADMIN')
+            return res.status(403).json({ message: "Suppression d'un administrateur interdite." });
+
+        // 2. Si c'est un COMMERCIAL, gérer le transfert de ses clients
+        if (role === 'COMMERCIAL') {
+
+            const clients = await db.query(
+                `SELECT u.email, u.prenom, u.nom
+                 FROM client c
+                 JOIN utilisateur u ON u.id = c.id_utilisateur
+                 WHERE c.id_commercial = $1`, [id]
+            );
+
+            if (clients.rows.length > 0) {
+
+               
+                if (!nouveau_commercial_id)
+                    return res.status(400).json({ 
+                        message: "Ce commercial a des clients. Veuillez fournir un nouveau_commercial_id." 
+                    });
+
+                // Vérifier que le nouveau commercial existe et est bien un COMMERCIAL
+                const newComCheck = await db.query(
+                    `SELECT id, nom, prenom, email FROM utilisateur 
+                     WHERE id = $1 AND role = 'COMMERCIAL'`, [nouveau_commercial_id]
+                );
+                if (newComCheck.rows.length === 0)
+                    return res.status(400).json({ message: "Nouveau commercial introuvable ou invalide." });
+
+                const newCom = newComCheck.rows[0];
+
+                // Transférer tous les clients
+                await db.query(
+                    `UPDATE client SET id_commercial = $1 WHERE id_commercial = $2`,
+                    [nouveau_commercial_id, id]
+                );
+
+                // Notifier le commercial supprimé
+                await sendStatusEmail(email, prenom, false, 
+                    `Votre compte a été supprimé. Vos ${clients.rows.length} client(s) ont été transférés à ${newCom.prenom} ${newCom.nom}.`
+                );
+
+                // Notifier chaque client
+                for (const client of clients.rows) {
+                    await sendTransferEmail(
+                        client.email, 
+                        client.prenom,
+                        `${prenom} ${nom}`,              // ancien commercial
+                        `${newCom.prenom} ${newCom.nom}` // nouveau commercial
+                    );
+                }
+            }
         }
 
-        await logAction(req.user.id, "ADMIN_DELETE_USER", `Suppression de l'utilisateur ID : ${id}`);
-        
-        res.status(200).json({ message: "Utilisateur (et ses données client) supprimé avec succès." });
+        // 3. Supprimer l'utilisateur
+        await db.query('DELETE FROM utilisateur WHERE id = $1', [id]);
+
+        await logAction(req.user.id, "ADMIN_DELETE_USER", 
+            `Suppression de ${prenom} ${nom} (${role}) - ID: ${id}`
+        );
+
+        await db.query('COMMIT');
+        res.status(200).json({ message: "Utilisateur supprimé avec succès." });
 
     } catch (err) {
+        await db.query('ROLLBACK');
         console.error(err.message);
         res.status(500).json({ error: "Erreur lors de la suppression." });
+    } finally {
+        db.release();
     }
 };
-
 
 exports.toggleUserStatus = async (req, res) => {
     const { id } = req.params;
