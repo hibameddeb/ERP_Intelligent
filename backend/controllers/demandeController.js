@@ -5,13 +5,12 @@ const { sendAdminNotification } = require('../utils/mailer');
 const VALID_TYPES = ['MF', 'CI', 'RC', 'SI', 'AU'];
 
 exports.creerDemandeAdhesion = async (req, res) => {
-    let values; // declared here so catch block can access it
+    let values;
 
     try {
         const rawBody = req.body;
         console.log(" Raw request body:", JSON.stringify(rawBody, null, 2));
 
-       
         const rawType = (rawBody.type_identifiant || 'MF').toString().toUpperCase().trim();
         const normalizedType = VALID_TYPES.includes(rawType) ? rawType : 'MF';
 
@@ -21,29 +20,26 @@ exports.creerDemandeAdhesion = async (req, res) => {
             num_autorisation = isNaN(parsed) ? null : parsed;
         }
 
-        // ─── num_etablissement: CHAR(3) column — max 3 chars ──────────────
-        // ⚠️  Your DB column is CHAR(3) which only fits 3-character values.
-        // If you need to store longer values, run this migration first:
-        //   ALTER TABLE demande_adhesion ALTER COLUMN num_etablissement TYPE VARCHAR(50);
         const num_etablissement = (rawBody.num_etablissement || '').toString().trim().substring(0, 3) || null;
 
         const safeData = {
             nom:              (rawBody.nom     || '').toString().substring(0, 100).trim() || null,
             prenom:           (rawBody.prenom  || '').toString().substring(0, 100).trim() || null,
-            email:            (rawBody.email   || '').toString().substring(0, 150).trim() || null, // col max=150
+            email:            (rawBody.email   || '').toString().substring(0, 150).trim() || null,
             num_tlp:          (rawBody.num_tlp || '').toString().substring(0, 20).trim()  || null,
-            type_identifiant: normalizedType,                                                       // VARCHAR(3)
+            type_identifiant: normalizedType,
             identifiant:      (rawBody.identifiant || '').toString().substring(0, 50).trim() || null,
-            adresse:          (rawBody.adresse || '').toString().trim() || null,                    // text (unlimited)
+            adresse:          (rawBody.adresse || '').toString().trim() || null,
             ville:            (rawBody.ville   || '').toString().substring(0, 100).trim() || null,
             rue:              (rawBody.rue     || '').toString().substring(0, 255).trim() || null,
-            activite:         (rawBody.activite || '').toString().trim() || null,                   // text (unlimited)
-            num_autorisation,                                                                        // INTEGER
-            date_autorisation: rawBody.date_autorisation || null,                                   // DATE
-            num_etablissement,                                                                       // CHAR(3)
+            activite:         (rawBody.activite || '').toString().trim() || null,
+            num_autorisation,
+            date_autorisation: rawBody.date_autorisation || null,
+            num_etablissement,
+            region:           (rawBody.region || '').toString().substring(0, 100).trim() || null,
         };
 
-        // ─── Validation ────────────────────────────────────────────────────
+       
         const missing = [];
         if (!safeData.nom)              missing.push('nom');
         if (!safeData.prenom)           missing.push('prenom');
@@ -52,6 +48,8 @@ exports.creerDemandeAdhesion = async (req, res) => {
         if (!safeData.identifiant)      missing.push('identifiant');
         if (!safeData.adresse)          missing.push('adresse');
         if (!safeData.ville)            missing.push('ville');
+
+        if (!safeData.region)           missing.push('region');
 
         if (missing.length > 0) {
             return res.status(400).json({ error: "Champs obligatoires manquants", fields: missing });
@@ -62,18 +60,14 @@ exports.creerDemandeAdhesion = async (req, res) => {
             return res.status(400).json({ error: "Format d'email invalide" });
         }
 
-        console.log("✅ Safe values ready:");
-        console.log("- type_identifiant:", `"${safeData.type_identifiant}"`);
-        console.log("- num_autorisation:", safeData.num_autorisation, "(integer)");
-        console.log("- num_etablissement:", `"${safeData.num_etablissement}"`);
-
-        // ─── Insert ────────────────────────────────────────────────────────
+      
         const query = `
             INSERT INTO demande_adhesion (
                 nom, prenom, email, num_tlp,
                 type_identifiant, identifiant, adresse, ville, rue,
-                activite, num_autorisation, date_autorisation, num_etablissement
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                activite, num_autorisation, date_autorisation, num_etablissement,
+                region
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             RETURNING id;
         `;
 
@@ -91,16 +85,23 @@ exports.creerDemandeAdhesion = async (req, res) => {
             safeData.num_autorisation,  // $11 INTEGER
             safeData.date_autorisation, // $12 DATE
             safeData.num_etablissement, // $13 CHAR(3)
+            safeData.region,            // $14 VARCHAR(100)
         ];
-
-        console.log("📤 Executing query with", values.length, "values");
-        console.log("Values:", values.map((v, i) => ({ [`$${i + 1}`]: v })));
 
         const result = await pool.query(query, values);
         const newRequestId = result.rows[0].id;
-        console.log("🎉 INSERT SUCCESS - ID:", newRequestId);
-
-        // ─── Admin email notification (non-blocking) ───────────────────────
+        console.log(" INSERT SUCCESS - ID:", newRequestId);
+        try {
+            await pool.query(
+                `INSERT INTO notification (type, message, id_produit) VALUES ($1, $2, NULL)`,
+                [
+                    'DEMANDE_ADHESION',
+                    `Nouvelle demande d'adhésion de ${safeData.prenom} ${safeData.nom} (${safeData.type_identifiant} : ${safeData.identifiant}) — Région : ${safeData.region}`
+                ]
+            );
+        } catch (notifErr) {
+            console.error('Notification insert failed:', notifErr.message);
+        }
         try {
             await sendAdminNotification(process.env.ADMIN_EMAIL, {
                 id:          newRequestId,
@@ -108,10 +109,10 @@ exports.creerDemandeAdhesion = async (req, res) => {
                 prenom:      safeData.prenom,
                 identifiant: safeData.identifiant,
                 type:        safeData.type_identifiant,
+                region:      safeData.region, 
             });
-            console.log("📧 Email sent");
         } catch (emailError) {
-            console.error("⚠️ Email failed (non-blocking):", emailError.message);
+            console.error(" Email failed (non-blocking):", emailError.message);
         }
 
         return res.status(201).json({
@@ -121,7 +122,7 @@ exports.creerDemandeAdhesion = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("💥 DETAILED ERROR:", {
+        console.error(" DETAILED ERROR:", {
             message: err.message,
             code:    err.code,
             detail:  err.detail  || null,

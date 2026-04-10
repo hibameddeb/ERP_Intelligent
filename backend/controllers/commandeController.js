@@ -167,8 +167,7 @@ const createCommande = async (req, res) => {
       });
     }
 
-    // 2. Vérification de l'existence ET de l'état "est_actif" du client
-    // On joint la table 'client' avec 'utilisateur' pour vérifier le booléen
+
     const clientCheck = await dbClient.query(
       `SELECT c.id, u.est_actif 
        FROM client c
@@ -187,7 +186,7 @@ const createCommande = async (req, res) => {
 
     const clientFound = clientCheck.rows[0];
 
-    // --- SÉCURITÉ : Blocage si le client n'est pas actif ---
+
     if (clientFound.est_actif !== true) {
       await dbClient.query('ROLLBACK');
       return res.status(403).json({
@@ -211,7 +210,7 @@ const createCommande = async (req, res) => {
       });
     }
 
-    // 4. Calcul du total TTC et validation des produits
+
     let total_ttc = 0;
     for (const ligne of details) {
       if (!ligne.id_produit || !ligne.quantite_achetee) {
@@ -254,7 +253,7 @@ const createCommande = async (req, res) => {
       total_ttc  += (montant_ht + fodec + tva - dc);
     }
 
-    // 5. Insertion de la facture
+
     const numero = num_facture && num_facture.trim()
       ? num_facture.trim()
       : `CMD-${Date.now()}`;
@@ -278,7 +277,7 @@ const createCommande = async (req, res) => {
 
     const newFacture = factureRes.rows[0];
 
-    // 6. Insertion des détails
+
     const insertedDetails = [];
     for (const ligne of details) {
       const produitRes = await dbClient.query(
@@ -298,7 +297,6 @@ const createCommande = async (req, res) => {
       insertedDetails.push(detailRes.rows[0]);
     }
 
-    // 7. Log de l'activité
     await logActivity(dbClient, {
       id_utilisateur: req.user?.id || id_commercial,
       action: 'CREER_COMMANDE',
@@ -405,7 +403,7 @@ const getActivityLogs = async (req, res) => {
 };
 
 
-// ─── NEW: get all records with statut = 'facture' ────────────────────────────
+
 const getFactures = async (req, res) => {
   const dbClient = await pool.connect();
   try {

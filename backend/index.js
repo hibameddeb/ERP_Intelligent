@@ -19,7 +19,7 @@ app.use('/api/users', usersRouter);
 app.use('/api/demandes', demandes);
 app.use('/api/produits', produitsRouter);
 app.use('/api/commandes', commandeRoutes);
-
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use((err, req, res, next) => {
     console.error("GLOBAL ERROR:", err.stack);
     res.status(500).json({ error: "Erreur serveur globale." });

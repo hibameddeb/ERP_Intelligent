@@ -29,20 +29,41 @@ exports.consulterRNE = async (req, res) => {
     }
 };
 
-// 2. Transférer de 'demande_adhesion' vers 'utilisateur' et 'client'
+
 exports.validerEtCreerClient = async (req, res) => {
     const { idDemande } = req.params;
-    const { id_commercial, score_solvabilite_ia } = req.body; // Données remplies par l'admin
-    
+    const { id_commercial, score_solvabilite_ia } = req.body;
+
     const db = await pool.connect();
     try {
         await db.query('BEGIN');
 
         // Récupérer la demande temporaire
         const demande = await db.query('SELECT * FROM demande_adhesion WHERE id = $1', [idDemande]);
+        if (demande.rows.length === 0)
+            return res.status(404).json({ message: "Demande non trouvée." });
+
         const d = demande.rows[0];
 
-        // Créer l'utilisateur (est_actif reste false jusqu'à l'activation par mail)
+        // ✅ Vérifier que le commercial existe et est dans la même région que le client
+        const commercialCheck = await db.query(
+            `SELECT c.region FROM commercial c
+             JOIN utilisateur u ON u.id = c.id_utilisateur
+             WHERE c.id_utilisateur = $1 AND u.role = 'COMMERCIAL'`,
+            [id_commercial]
+        );
+
+        if (commercialCheck.rows.length === 0)
+            return res.status(404).json({ message: "Commercial introuvable." });
+
+        const commercialRegion = commercialCheck.rows[0].region;
+
+        if (commercialRegion !== d.region)
+            return res.status(400).json({ 
+                message: `Le commercial sélectionné est dans la région "${commercialRegion}" mais le client est dans la région "${d.region}". Veuillez choisir un commercial de la même région.`
+            });
+
+        // Créer l'utilisateur
         const userRes = await db.query(
             `INSERT INTO utilisateur (nom, prenom, email, role, num_tlp, est_actif) 
              VALUES ($1, $2, $3, 'CLIENT', $4, false) RETURNING id`,
@@ -50,13 +71,18 @@ exports.validerEtCreerClient = async (req, res) => {
         );
         const newUserId = userRes.rows[0].id;
 
-        // Créer le client avec les colonnes de ton image
+        // Créer le client
         await db.query(
             `INSERT INTO client (
                 id_utilisateur, type_identifiant, identifiant, adresse, 
-                ville, rue, activite, num_etablissement, id_commercial, score_solvabilite_ia
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [newUserId, d.type_identifiant, d.identifiant, d.adresse, d.ville, d.rue, d.activite, d.num_etablissement, id_commercial, score_solvabilite_ia]
+                ville, rue, activite, num_etablissement, id_commercial, 
+                score_solvabilite_ia, region
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [
+                newUserId, d.type_identifiant, d.identifiant, d.adresse,
+                d.ville, d.rue, d.activite, d.num_etablissement,
+                id_commercial, score_solvabilite_ia, d.region
+            ]
         );
 
         // Supprimer la demande traitée
@@ -64,6 +90,7 @@ exports.validerEtCreerClient = async (req, res) => {
 
         await db.query('COMMIT');
         res.status(201).json({ message: "Client créé avec succès dans la base officielle." });
+
     } catch (err) {
         await db.query('ROLLBACK');
         res.status(500).json({ error: err.message });

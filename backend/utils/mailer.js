@@ -68,5 +68,6 @@ const sendTransferEmail = async (email, prenom, ancienCommercial, nouveauCommerc
         `
     });
 };
-module.exports = { sendStatusEmail, sendAdminNotification, sendTransferEmail };
+
+module.exports = { sendStatusEmail, sendAdminNotification, sendTransferEmail  };
 

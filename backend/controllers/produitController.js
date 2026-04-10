@@ -1,7 +1,7 @@
 const pool = require('../config/db');
 const { logAction } = require('../utils/logs');
+const { sendStockAlertEmail } = require('../utils/mailer');
 
-// 1. Récupérer tous les produits
 exports.getAllProduits = async (req, res) => {
     try {
         const result = await pool.query(`
@@ -16,29 +16,32 @@ exports.getAllProduits = async (req, res) => {
     }
 };
 
-// Extrait de produitController.js
 exports.createProduit = async (req, res) => {
-    const { nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc } = req.body;
-    const images = req.files; // Supposons que tu utilises Multer pour l'upload
+    // ✅ categorie et quantite ajoutés
+    const { nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, categorie, quantite } = req.body;
+    const images = req.files;
+
+    // ✅ Validation quantite
+    if (quantite !== undefined && (isNaN(quantite) || parseInt(quantite) < 0)) {
+        return res.status(400).json({ message: "La quantité doit être un entier positif." });
+    }
 
     const db = await pool.connect();
     try {
-        await db.query('BEGIN'); // On démarre la transaction
+        await db.query('BEGIN');
 
-        // 1. On insère le produit
         const produitRes = await db.query(
-            `INSERT INTO produit (nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc) 
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-            [nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc]
+            `INSERT INTO produit (nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, categorie, quantite) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc,
+             categorie || null, quantite !== undefined ? parseInt(quantite) : 0]
         );
         const produitId = produitRes.rows[0].id;
 
-        // 2. On insère chaque image dans la nouvelle table produit_image
         if (images && images.length > 0) {
             for (let i = 0; i < images.length; i++) {
                 const path = `/uploads/produits/${images[i].filename}`;
-                const primary = (i === 0); // La première image devient l'image principale par défaut
-                
+                const primary = (i === 0);
                 await db.query(
                     `INSERT INTO produit_image (id_produit, image_url, is_primary) VALUES ($1, $2, $3)`,
                     [produitId, path, primary]
@@ -46,53 +49,10 @@ exports.createProduit = async (req, res) => {
             }
         }
 
-        await db.query('COMMIT'); // On valide tout
-        res.status(201).json({ message: "Produit et images créés !" });
-
-    } catch (err) {
-        await db.query('ROLLBACK'); // En cas d'erreur, on annule TOUT (pas de produit sans images ou vice-versa)
-        res.status(500).json({ error: err.message });
-    } finally {
-        db.release();
-    }
-};
-
-exports.updateProduit = async (req, res) => {
-    const { id } = req.params;
-    const { nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc } = req.body;
-    const images = req.files;
-
-    const db = await pool.connect();
-    try {
-        await db.query('BEGIN');
-
-        // 1. Mettre à jour les infos du produit
-        const result = await db.query(
-            `UPDATE produit SET nom_produit=$1, description=$2, prix_unitaire_ht=$3, 
-             taux_tva=$4, taux_fodec=$5, taux_dc=$6 WHERE id=$7 RETURNING *`,
-            [nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, id]
-        );
-
-        if (result.rowCount === 0) {
-            await db.query('ROLLBACK');
-            return res.status(404).json({ message: "Produit non trouvé." });
-        }
-
-        // 2. Insérer les nouvelles images — toujours is_primary = false
-        if (images && images.length > 0) {
-            for (const image of images) {
-                const imagePath = `/uploads/produits/${image.filename}`;
-                await db.query(
-                    `INSERT INTO produit_image (id_produit, image_url, is_primary) 
-                     VALUES ($1, $2, false)`,  // ← toujours false, la principale reste intacte
-                    [id, imagePath]
-                );
-            }
-        }
-
         await db.query('COMMIT');
-        await logAction(req.user.id, "UPDATE_PRODUCT", `Produit modifié ID: ${id}`);
-        res.status(200).json({ message: "Produit mis à jour avec succès." });
+        await logAction(req.user.id, "CREATE_PRODUCT", `Produit créé : ${nom_produit}`);
+        await checkAndNotifyStock(produitId, nom_produit, quantite);
+        res.status(201).json({ message: "Produit créé avec succès." });
 
     } catch (err) {
         await db.query('ROLLBACK');
@@ -102,7 +62,67 @@ exports.updateProduit = async (req, res) => {
     }
 };
 
-// 4. Supprimer un produit
+exports.updateProduit = async (req, res) => {
+    const { id } = req.params;
+    const { nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, categorie, quantite } = req.body;
+    const images = req.files;
+
+    console.log('req.body:', req.body);
+
+    if (!nom_produit || !prix_unitaire_ht) {
+        return res.status(400).json({ message: "Nom et prix sont obligatoires." });
+    }
+
+    const db = await pool.connect();
+    try {
+        await db.query('BEGIN');
+
+        const result = await db.query(
+            `UPDATE produit 
+             SET nom_produit=$1, description=$2, prix_unitaire_ht=$3,
+                 taux_tva=$4, taux_fodec=$5, taux_dc=$6, categorie=$7, quantite=$8,
+                 updated_at=NOW()
+             WHERE id=$9 RETURNING *`,
+            [
+                nom_produit,
+                description || null,
+                parseFloat(prix_unitaire_ht),
+                parseFloat(taux_tva) || 0,
+                parseFloat(taux_fodec) || 0,
+                parseFloat(taux_dc) || 0,
+                categorie || null,
+                parseInt(quantite) || 0,  
+                id
+            ]
+        );
+
+        if (result.rowCount === 0) {
+            await db.query('ROLLBACK');
+            return res.status(404).json({ message: "Produit non trouvé." });
+        }
+
+        if (images && images.length > 0) {
+            for (const image of images) {
+                const imagePath = `/uploads/produits/${image.filename}`;
+                await db.query(
+                    `INSERT INTO produit_image (id_produit, image_url, is_primary) VALUES ($1, $2, false)`,
+                    [id, imagePath]
+                );
+            }
+        }
+
+        await db.query('COMMIT');
+        await logAction(req.user.id, "UPDATE_PRODUCT", `Produit modifié ID: ${id}`);
+        await checkAndNotifyStock(id, nom_produit, quantite);
+        res.status(200).json({ message: "Produit mis à jour avec succès." });
+
+    } catch (err) {
+        await db.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        db.release();
+    }
+};
 exports.deleteProduit = async (req, res) => {
     const { id } = req.params;
     try {
@@ -126,5 +146,32 @@ exports.getProduitImages = async (req, res) => {
         res.status(200).json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+};
+
+const checkAndNotifyStock = async (produitId, nomProduit, quantite) => {
+    const qty = parseInt(quantite) || 0;
+    if (qty > 5) return;
+
+    const type    = qty === 0 ? 'STOCK_RUPTURE' : 'STOCK_FAIBLE';
+    const message = qty === 0
+        ? `Rupture de stock : "${nomProduit}" — plus aucune unité disponible.`
+        : `Stock faible : "${nomProduit}" — seulement ${qty} unité(s) restante(s).`;
+
+    try {
+        // Avoid duplicate notifications for same product + same type
+        const existing = await pool.query(
+            `SELECT id FROM notification 
+             WHERE id_produit = $1 AND type = $2 AND is_read = false`,
+            [produitId, type]
+        );
+        if (existing.rows.length > 0) return; // already notified
+
+        await pool.query(
+            `INSERT INTO notification (type, message, id_produit) VALUES ($1, $2, $3)`,
+            [type, message, produitId]
+        );
+    } catch (err) {
+        console.error('Notification insert failed:', err.message);
     }
 };

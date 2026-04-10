@@ -1,3 +1,4 @@
+// uploadMiddleware.js
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
@@ -12,9 +13,8 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({
-    storage: storage,
+
+module.exports = multer({
+    storage,
     limits: { fileSize: 2 * 1024 * 1024 }
 });
-
-module.exports = upload.array('images', 5);
