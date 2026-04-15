@@ -126,11 +126,28 @@ exports.updateProduit = async (req, res) => {
 exports.deleteProduit = async (req, res) => {
     const { id } = req.params;
     try {
+        // Check if any non-delivered orders contain this product
+        const pendingOrders = await pool.query(
+            `SELECT COUNT(*) 
+             FROM commande_produit cp
+             JOIN commande c ON c.id = cp.id_commande
+             WHERE cp.id_produit = $1
+             AND c.statut != 'livree'`,
+            [id]
+        );
+
+        if (parseInt(pendingOrders.rows[0].count) > 0) {
+            return res.status(400).json({
+                message: "Impossible de supprimer ce produit : certaines commandes le contenant ne sont pas encore livrées."
+            });
+        }
+
         const result = await pool.query('DELETE FROM produit WHERE id = $1', [id]);
         if (result.rowCount === 0) return res.status(404).json({ message: "Produit non trouvé." });
 
         await logAction(req.user.id, "DELETE_PRODUCT", `Produit supprimé ID: ${id}`);
         res.status(200).json({ message: "Produit supprimé avec succès." });
+
     } catch (err) {
         res.status(500).json({ error: "Impossible de supprimer le produit (il est peut-être lié à des factures)." });
     }
@@ -159,13 +176,13 @@ const checkAndNotifyStock = async (produitId, nomProduit, quantite) => {
         : `Stock faible : "${nomProduit}" — seulement ${qty} unité(s) restante(s).`;
 
     try {
-        // Avoid duplicate notifications for same product + same type
+        
         const existing = await pool.query(
             `SELECT id FROM notification 
              WHERE id_produit = $1 AND type = $2 AND is_read = false`,
             [produitId, type]
         );
-        if (existing.rows.length > 0) return; // already notified
+        if (existing.rows.length > 0) return; 
 
         await pool.query(
             `INSERT INTO notification (type, message, id_produit) VALUES ($1, $2, $3)`,

@@ -1,468 +1,315 @@
 const pool = require('../config/db');
 
-
 const logActivity = async (client, { id_utilisateur, action, description }) => {
-  await client.query(
-    `INSERT INTO log_activite (id_utilisateur, action, description, date_heure)
-     VALUES ($1, $2, $3, NOW())`,
-    [id_utilisateur, action, description]
-  );
+    await client.query(
+        `INSERT INTO log_activite (id_utilisateur, action, description, date_heure)
+         VALUES ($1, $2, $3, NOW())`,
+        [id_utilisateur, action, description]
+    );
 };
 
-
+// ─────────────────────────────────────────────
+// GET ALL
+// ─────────────────────────────────────────────
 const getAllCommandes = async (req, res) => {
-  const dbClient = await pool.connect();
-  try {
-    const result = await dbClient.query(`
-      SELECT 
-        f.id,
-        f.num_facture,
-        f.num_ordre,
-        f.date_creation,
-        f.statut,
-        f.trimestre,
-        f.type_en,
-        f.total_ttc,
-        f.id_commercial,
-        u_com.nom   AS commercial_nom,
+    const db = await pool.connect();
+    try {
+const result = await db.query(`
+    SELECT
+        cmd.id,
+        cmd.num_ordre,
+        cmd.trimestre,
+        cmd.type_en,
+        cmd.statut,
+        cmd.total_ttc,
+        cmd.date_creation,
+        cmd.date_validation,
+        cmd.score_ia_confiance,
+        cmd.alerte_fraude_ia,
+        cmd.id_commercial,
+        u_com.nom AS commercial_nom,
         u_com.prenom AS commercial_prenom,
-        f.id_client,
+        cmd.id_client,
         c.identifiant AS client_identifiant,
-        u_cli.nom    AS client_nom,
-        u_cli.prenom AS client_prenom,
-        c.adresse AS client_adresse,
-        c.ville AS client_ville
-      FROM facture f
-      LEFT JOIN utilisateur u_com ON u_com.id = f.id_commercial
-      LEFT JOIN client c           ON c.id = f.id_client
-      LEFT JOIN utilisateur u_cli  ON u_cli.id = c.id_utilisateur
-      WHERE f.statut = 'commande'
-      ORDER BY f.date_creation DESC
-    `);
-
-    await logActivity(dbClient, {
-      id_utilisateur: req.user?.id || null,
-      action: 'CONSULTER_COMMANDES',
-      description: `Consultation de la liste des commandes (${result.rows.length} résultats)`,
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: result.rows.length,
-      data: result.rows,
-    });
-  } catch (error) {
-    console.error('getAllCommandes error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erreur serveur',
-      error: error.message,
-    });
-  } finally {
-    dbClient.release();
-  }
-};
-
-
-const getCommandeById = async (req, res) => {
-  const { id } = req.params;
-  const dbClient = await pool.connect();
-
-  try {
-    const factureResult = await dbClient.query(`
-      SELECT 
-        f.*,
-        u_com.nom    AS commercial_nom,
-        u_com.prenom AS commercial_prenom,
-        c.identifiant AS client_identifiant,
-        c.adresse    AS client_adresse,
-        c.ville      AS client_ville,
-        u_cli.nom    AS client_nom,
+        c.adresse,
+        c.ville,
+        u_cli.nom AS client_nom,
         u_cli.prenom AS client_prenom
-      FROM facture f
-      LEFT JOIN utilisateur u_com ON u_com.id = f.id_commercial
-      LEFT JOIN client c           ON c.id = f.id_client
-      LEFT JOIN utilisateur u_cli  ON u_cli.id = c.id_utilisateur
-     WHERE f.id = $1 AND (f.statut = 'commande' OR f.statut = 'facture')
-    `, [id]);
+    FROM commande cmd
+    LEFT JOIN utilisateur u_com ON u_com.id = cmd.id_commercial
+    LEFT JOIN client c ON c.id_utilisateur = cmd.id_client
+    LEFT JOIN utilisateur u_cli ON u_cli.id = cmd.id_client
+    ORDER BY cmd.date_creation DESC
+`);
 
-    if (factureResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Commande introuvable' });
+        await logActivity(db, {
+            id_utilisateur: req.user?.id || null,
+            action: 'CONSULTER_COMMANDES',
+            description: `Liste commandes (${result.rows.length})`,
+        });
+
+        return res.json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ success: false, message: err.message });
+    } finally {
+        db.release();
     }
-
-    const detailsResult = await dbClient.query(`
-      SELECT 
-        df.id,
-        df.id_produit,
-        p.nom_produit,
-        p.taux_tva,
-        p.taux_fodec,
-        p.taux_dc,
-        df.quantite_achetee,
-        df.prix_unitaire_ht_applique,
-        (df.quantite_achetee * df.prix_unitaire_ht_applique) AS total_ht_ligne
-      FROM detail_facture df
-      LEFT JOIN produit p ON p.id = df.id_produit
-      WHERE df.id_facture = $1
-    `, [id]);
-
-    await logActivity(dbClient, {
-      id_utilisateur: req.user?.id || null,
-      action: 'CONSULTER_COMMANDE',
-      description: `Consultation de la commande #${id}`,
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        commande: factureResult.rows[0],
-        details: detailsResult.rows,
-      },
-    });
-  } catch (error) {
-    console.error('getCommandeById error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erreur serveur',
-      error: error.message,
-    });
-  } finally {
-    dbClient.release();
-  }
 };
 
+// ─────────────────────────────────────────────
+// GET BY ID
+// ─────────────────────────────────────────────
+const getCommandeById = async (req, res) => {
+    const { id } = req.params;
+    const db = await pool.connect();
 
+    try {
+        const cmdResult = await db.query(`
+            SELECT
+                cmd.*,
+                u_com.nom AS commercial_nom,
+                u_com.prenom AS commercial_prenom,
+                c.identifiant AS client_identifiant,
+                c.adresse AS client_adresse,
+                c.ville AS client_ville,
+                u_cli.nom AS client_nom,
+                u_cli.prenom AS client_prenom
+            FROM commande cmd
+            LEFT JOIN utilisateur u_com ON u_com.id = cmd.id_commercial
+            LEFT JOIN client c ON c.id_utilisateur = cmd.id_client
+            LEFT JOIN utilisateur u_cli ON u_cli.id = cmd.id_client
+            WHERE cmd.id = $1
+        `, [id]);
+
+        if (cmdResult.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Commande introuvable' });
+        }
+
+        const detailsResult = await db.query(`
+            SELECT
+                dc.*,
+                p.nom_produit,
+                p.taux_tva,
+                p.taux_fodec,
+                p.taux_dc,
+                (dc.quantite_achetee * dc.prix_unitaire_ht_ap) AS total_ht_ligne
+            FROM detail_commande dc
+            LEFT JOIN produit p ON p.id = dc.id_produit
+            WHERE dc.id_commande = $1
+        `, [id]);
+
+        return res.json({
+            success: true,
+            data: {
+                commande: cmdResult.rows[0],
+                details: detailsResult.rows
+            }
+        });
+
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    } finally {
+        db.release();
+    }
+};
+
+// ─────────────────────────────────────────────
+// CREATE COMMANDE (FIXED)
+// ─────────────────────────────────────────────
 const createCommande = async (req, res) => {
-  const dbClient = await pool.connect();
+    const db = await pool.connect();
 
-  try {
-    await dbClient.query('BEGIN');
+    try {
+        await db.query('BEGIN');
 
-    const {
-      id_client,
-      id_commercial,
-      id_societe,
-      id_comptable,
-      trimestre,
-      num_facture,
-      details = [],
-    } = req.body;
+        const {
+            id_client,
+            id_commercial,
+            id_societe,
+            id_comptable,
+            trimestre,
+            details = []
+        } = req.body;
 
-    const type_en = 'DF';
+        const type_en = 'DF';
 
-    // 1. Validations de base
-    if (!id_client || !id_commercial) {
-      await dbClient.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'id_client et id_commercial sont requis.',
-      });
-    }
+        if (!id_client || !id_commercial) {
+            await db.query('ROLLBACK');
+            return res.status(400).json({ message: 'id_client et id_commercial requis' });
+        }
 
-    if (!Array.isArray(details) || details.length === 0) {
-      await dbClient.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: 'Au moins un produit est requis.',
-      });
-    }
+        if (!Array.isArray(details) || details.length === 0) {
+            await db.query('ROLLBACK');
+            return res.status(400).json({ message: 'details requis' });
+        }
 
+        const clientCheck = await db.query(`
+            SELECT u.id, u.est_actif
+            FROM client c
+            JOIN utilisateur u ON u.id = c.id_utilisateur
+            WHERE c.id_utilisateur = $1
+        `, [id_client]);
 
-    const clientCheck = await dbClient.query(
-      `SELECT c.id, u.est_actif 
-       FROM client c
-       JOIN utilisateur u ON c.id_utilisateur = u.id
-       WHERE c.id_utilisateur = $1`,
-      [id_client]
-    );
+        if (!clientCheck.rows.length) {
+            await db.query('ROLLBACK');
+            return res.status(404).json({ message: 'Client introuvable' });
+        }
 
-    if (clientCheck.rows.length === 0) {
-      await dbClient.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: `Aucun client trouvé pour l'utilisateur id=${id_client}.`,
-      });
-    }
+        if (!clientCheck.rows[0].est_actif) {
+            await db.query('ROLLBACK');
+            return res.status(403).json({ message: 'Client inactif' });
+        }
 
-    const clientFound = clientCheck.rows[0];
+        // commercial check
+        const commercialCheck = await db.query(
+            `SELECT id FROM utilisateur WHERE id=$1 AND role='COMMERCIAL'`,
+            [id_commercial]
+        );
 
+        if (!commercialCheck.rows.length) {
+            await db.query('ROLLBACK');
+            return res.status(400).json({ message: 'Commercial invalide' });
+        }
 
-    if (clientFound.est_actif !== true) {
-      await dbClient.query('ROLLBACK');
-      return res.status(403).json({
-        success: false,
-        message: "Action impossible : le compte de ce client est actuellement inactif.",
-      });
-    }
+        let total_ttc = 0;
+        const lignes = [];
 
-    const real_id_client = clientFound.id;
+        for (const l of details) {
+            const pRes = await db.query(
+                `SELECT * FROM produit WHERE id=$1`,
+                [l.id_produit]
+            );
 
-    // 3. Vérification du commercial
-    const commercialCheck = await dbClient.query(
-      'SELECT id FROM utilisateur WHERE id = $1',
-      [id_commercial]
-    );
-    if (commercialCheck.rows.length === 0) {
-      await dbClient.query('ROLLBACK');
-      return res.status(400).json({
-        success: false,
-        message: `Commercial id=${id_commercial} introuvable.`,
-      });
-    }
+            if (!pRes.rows.length) {
+                await db.query('ROLLBACK');
+                return res.status(400).json({ message: 'Produit introuvable' });
+            }
 
+            const p = pRes.rows[0];
+            const qty = Number(l.quantite_achetee);
+            const price = Number(l.prix_unitaire_ht_ap || p.prix_unitaire_ht);
 
-    let total_ttc = 0;
-    for (const ligne of details) {
-      if (!ligne.id_produit || !ligne.quantite_achetee) {
-        await dbClient.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: 'Chaque produit doit avoir id_produit et quantite_achetee.',
+            const ht = qty * price;
+            const f = ht * (p.taux_fodec || 0) / 100;
+            const t = (ht + f) * (p.taux_tva || 0) / 100;
+            const d = ht * (p.taux_dc || 0) / 100;
+
+            total_ttc += ht + f + t - d;
+
+            lignes.push({ ...l, price, qty });
+        }
+
+        const cmdRes = await db.query(`
+            INSERT INTO commande (
+                id_client, id_commercial, id_societe, id_comptable,
+                trimestre, type_en, statut, total_ttc,
+                identifiant_global_unique, date_creation
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,'EN_ATTENTE',$7,gen_random_uuid(),NOW())
+            RETURNING *
+        `, [
+            id_client,
+            id_commercial,
+            id_societe || null,
+            id_comptable || null,
+            trimestre || null,
+            type_en,
+            total_ttc.toFixed(3)
+        ]);
+
+        const newCmd = cmdRes.rows[0];
+
+        for (const l of lignes) {
+            await db.query(`
+                INSERT INTO detail_commande
+                (id_commande,id_produit,quantite_achetee,prix_unitaire_ht_ap)
+                VALUES ($1,$2,$3,$4)
+            `, [newCmd.id, l.id_produit, l.qty, l.price]);
+        }
+
+        await db.query('COMMIT');
+
+        return res.status(201).json({
+            success: true,
+            data: newCmd
         });
-      }
 
-      const produitRes = await dbClient.query(
-        'SELECT prix_unitaire_ht, taux_tva, taux_fodec, taux_dc FROM produit WHERE id = $1',
-        [ligne.id_produit]
-      );
-
-      if (produitRes.rows.length === 0) {
-        await dbClient.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: `Produit id=${ligne.id_produit} introuvable.`,
-        });
-      }
-
-      const p = produitRes.rows[0];
-      const qty = parseFloat(ligne.quantite_achetee) || 0;
-      const prix_ht = parseFloat(ligne.prix_unitaire_ht_applique || p.prix_unitaire_ht) || 0;
-
-      if (qty <= 0 || prix_ht < 0) {
-        await dbClient.query('ROLLBACK');
-        return res.status(400).json({
-          success: false,
-          message: 'Quantité et prix doivent être positifs.',
-        });
-      }
-
-      const montant_ht = prix_ht * qty;
-      const fodec = montant_ht * (parseFloat(p.taux_fodec) || 0) / 100;
-      const tva   = (montant_ht + fodec) * (parseFloat(p.taux_tva) || 0) / 100;
-      const dc    = montant_ht * (parseFloat(p.taux_dc) || 0) / 100;
-      total_ttc  += (montant_ht + fodec + tva - dc);
+    } catch (err) {
+        await db.query('ROLLBACK');
+        return res.status(500).json({ message: err.message });
+    } finally {
+        db.release();
     }
-
-
-    const numero = num_facture && num_facture.trim()
-      ? num_facture.trim()
-      : `CMD-${Date.now()}`;
-
-    const factureRes = await dbClient.query(`
-      INSERT INTO facture
-        (id_client, id_commercial, id_societe, id_comptable, trimestre, type_en,
-         num_facture, date_creation, statut, total_ttc)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'commande', $8)
-      RETURNING *
-    `, [
-      real_id_client,
-      id_commercial,
-      id_societe   || null,
-      id_comptable || null,
-      trimestre    || null,
-      type_en,
-      numero,
-      parseFloat(total_ttc.toFixed(3)),
-    ]);
-
-    const newFacture = factureRes.rows[0];
-
-
-    const insertedDetails = [];
-    for (const ligne of details) {
-      const produitRes = await dbClient.query(
-        'SELECT prix_unitaire_ht FROM produit WHERE id = $1',
-        [ligne.id_produit]
-      );
-
-      const prix_ht = parseFloat(ligne.prix_unitaire_ht_applique || produitRes.rows[0].prix_unitaire_ht) || 0;
-      const qty     = parseFloat(ligne.quantite_achetee) || 0;
-
-      const detailRes = await dbClient.query(`
-        INSERT INTO detail_facture (id_facture, id_produit, quantite_achetee, prix_unitaire_ht_applique)
-        VALUES ($1, $2, $3, $4)
-        RETURNING *
-      `, [newFacture.id, ligne.id_produit, qty, prix_ht]);
-
-      insertedDetails.push(detailRes.rows[0]);
-    }
-
-    await logActivity(dbClient, {
-      id_utilisateur: req.user?.id || id_commercial,
-      action: 'CREER_COMMANDE',
-      description: `Création de la commande #${newFacture.id} pour le client actif ID:${real_id_client}`,
-    });
-
-    await dbClient.query('COMMIT');
-
-    return res.status(201).json({
-      success: true,
-      message: 'Commande créée avec succès',
-      data: {
-        commande: newFacture,
-        details: insertedDetails,
-      },
-    });
-
-  } catch (error) {
-    await dbClient.query('ROLLBACK');
-    console.error('[createCommande Error]:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la création de la commande.',
-      error: error.message,
-    });
-  } finally {
-    dbClient.release();
-  }
 };
 
-const deleteCommande = async (req, res) => {
-  const { id } = req.params;
-  const dbClient = await pool.connect();
+// ─────────────────────────────────────────────
+// CANCEL COMMANDE (NEW)
+// ─────────────────────────────────────────────
+const cancelCommande = async (req, res) => {
+    const { id } = req.params;
+    const db = await pool.connect();
 
-  try {
-    await dbClient.query('BEGIN');
+    try {
+        const check = await db.query(
+            `SELECT statut FROM commande WHERE id=$1`,
+            [id]
+        );
 
-    const checkRes = await dbClient.query(
-      'SELECT id, statut, num_facture FROM facture WHERE id = $1',
-      [id]
-    );
+        if (!check.rows.length) {
+            return res.status(404).json({ message: 'Introuvable' });
+        }
 
-    if (checkRes.rows.length === 0) {
-      await dbClient.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'Commande introuvable.',
-      });
+        if (check.rows[0].statut !== 'EN_ATTENTE') {
+            return res.status(400).json({ message: 'Impossible à annuler' });
+        }
+
+        await db.query(
+            `UPDATE commande SET statut='ANNULEE' WHERE id=$1`,
+            [id]
+        );
+
+        return res.json({ success: true });
+
+    } finally {
+        db.release();
     }
+};
 
-    if (checkRes.rows[0].statut !== 'commande') {
-      await dbClient.query('ROLLBACK');
-      return res.status(403).json({
-        success: false,
-        message: `Impossible de supprimer : statut actuel = "${checkRes.rows[0].statut}". Seules les commandes non validées peuvent être supprimées.`,
-      });
+// ─────────────────────────────────────────────
+// VALIDATE COMMANDE
+// ─────────────────────────────────────────────
+const validerCommande = async (req, res) => {
+    const { id } = req.params;
+    const db = await pool.connect();
+
+    try {
+        const cmd = await db.query(`SELECT * FROM commande WHERE id=$1`, [id]);
+
+        if (!cmd.rows.length) {
+            return res.status(404).json({ message: 'Introuvable' });
+        }
+
+        if (cmd.rows[0].statut !== 'EN_ATTENTE') {
+            return res.status(400).json({ message: 'Déjà traitée' });
+        }
+
+        await db.query(
+            `UPDATE commande SET statut='VALIDEE', date_validation=NOW() WHERE id=$1`,
+            [id]
+        );
+
+        return res.json({ success: true });
+
+    } finally {
+        db.release();
     }
-
-    const { num_facture } = checkRes.rows[0];
-
-    await dbClient.query('DELETE FROM detail_facture WHERE id_facture = $1', [id]);
-    await dbClient.query('DELETE FROM facture WHERE id = $1', [id]);
-
-    await logActivity(dbClient, {
-      id_utilisateur: req.user?.id || null,
-      action: 'SUPPRIMER_COMMANDE',
-      description: `Suppression de la commande #${id} (${num_facture})`,
-    });
-
-    await dbClient.query('COMMIT');
-
-    return res.status(200).json({
-      success: true,
-      message: `Commande #${id} supprimée avec succès.`,
-    });
-  } catch (error) {
-    await dbClient.query('ROLLBACK');
-    console.error('deleteCommande error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la suppression.',
-      error: error.message,
-    });
-  } finally {
-    dbClient.release();
-  }
 };
-
-
-const getActivityLogs = async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT log.id, log.action, log.date_heure, log.description,
-             u.nom, u.prenom, u.role
-      FROM log_activite log
-      JOIN utilisateur u ON log.id_utilisateur = u.id
-      ORDER BY log.date_heure DESC
-    `);
-    res.status(200).json(result.rows);
-  } catch (err) {
-    console.error(' getActivityLogs error:', err.message);
-    res.status(500).json({ error: 'Erreur lors de la récupération des logs.', detail: err.message });
-  }
-};
-
-
-
-const getFactures = async (req, res) => {
-  const dbClient = await pool.connect();
-  try {
-    const result = await dbClient.query(`
-      SELECT 
-        f.id,
-        f.num_facture,
-        f.num_ordre,
-        f.date_creation,
-        f.statut,
-        f.trimestre,
-        f.type_en,
-        f.total_ttc,
-        f.id_commercial,
-        u_com.nom    AS commercial_nom,
-        u_com.prenom AS commercial_prenom,
-        f.id_client,
-        c.identifiant AS client_identifiant,
-        u_cli.nom    AS client_nom,
-        u_cli.prenom AS client_prenom,
-        c.adresse    AS client_adresse,
-        c.ville      AS client_ville
-      FROM facture f
-      LEFT JOIN utilisateur u_com ON u_com.id = f.id_commercial
-      LEFT JOIN client c           ON c.id = f.id_client
-      LEFT JOIN utilisateur u_cli  ON u_cli.id = c.id_utilisateur
-      WHERE f.statut = 'facture'
-      ORDER BY f.date_creation DESC
-    `);
-
-    await logActivity(dbClient, {
-      id_utilisateur: req.user?.id || null,
-      action: 'CONSULTER_FACTURES',
-      description: `Consultation de la liste des factures (${result.rows.length} résultats)`,
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: result.rows.length,
-      data: result.rows,
-    });
-  } catch (error) {
-    console.error('getFactures error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erreur serveur',
-      error: error.message,
-    });
-  } finally {
-    dbClient.release();
-  }
-};
-
 
 module.exports = {
-  getAllCommandes,
-  getCommandeById,
-  createCommande,
-  deleteCommande,
-  getActivityLogs,
-  getFactures,
+    getAllCommandes,
+    getCommandeById,
+    createCommande,
+    validerCommande,
+    cancelCommande
 };

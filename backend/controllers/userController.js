@@ -10,6 +10,7 @@ exports.getUsers = async (req, res) => {
     try {
         let query = `
             SELECT u.id, u.nom, u.prenom, u.email, u.role, u.num_tlp, u.est_actif,
+                   c.id AS client_id,
                    c.type_identifiant, c.identifiant, c.ville, c.activite, c.id_commercial,
                    COALESCE(com.region, c.region) AS region
             FROM utilisateur u
