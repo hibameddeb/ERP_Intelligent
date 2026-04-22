@@ -1,9 +1,8 @@
 const jwt = require('jsonwebtoken');
 
-
 exports.verifyToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    
+
     if (!authHeader) {
         console.log(" No Authorization header");
         return res.status(403).json({ message: "Accès refusé." });
@@ -32,6 +31,22 @@ exports.isAdmin = (req, res, next) => {
         next();
     } else {
         return res.status(403).json({ message: "Droits insuffisants. Réservé à l'administrateur." });
+    }
+};
+
+exports.isFournisseur = (req, res, next) => {
+    if (req.user && req.user.role === 'FOURNISSEUR') {
+        next();
+    } else {
+        return res.status(403).json({ message: "Accès réservé aux fournisseurs." });
+    }
+};
+
+exports.isAdminOrFournisseur = (req, res, next) => {
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'FOURNISSEUR')) {
+        next();
+    } else {
+        return res.status(403).json({ message: "Accès réservé aux administrateurs et fournisseurs." });
     }
 };
 

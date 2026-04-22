@@ -1,14 +1,24 @@
-// produitRoutes.js
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const produitController = require('../controllers/produitController');
-const { verifyToken, isAdmin } = require('../middleware/authMiddleware');
-const upload = require('../middleware/uploadMiddleware');
+const { verifyToken, isAdmin, isStaff } = require("../middleware/authMiddleware");
+const {
+  getAllProduitsEntreprise,
+  getProduitEntrepriseById,
+  getProduitsFromFacture,
+  getFacturesAchat,
+  createProduitEntreprise,
+  updateProduitEntreprise,
+  deleteProduitEntreprise,
+  getMaxQuantite
+} = require("../controllers/produitController");
 
-router.post('/',    verifyToken, isAdmin, upload.array('images', 5), produitController.createProduit);
-router.get('/',     verifyToken, produitController.getAllProduits);
-router.put('/:id',  verifyToken, isAdmin, upload.array('images', 5), produitController.updateProduit);
-router.delete('/:id', verifyToken, isAdmin, produitController.deleteProduit);
-router.get('/:id/images', verifyToken, produitController.getProduitImages);
-
+router.get("/",                                    verifyToken, isStaff, getAllProduitsEntreprise);
+router.get("/factures",                            verifyToken, isAdmin, getFacturesAchat);
+router.get("/factures/:id_facture/produits",       verifyToken, isAdmin, getProduitsFromFacture);
+router.get("/max-quantite/:id_produit_f",          verifyToken, isAdmin, getMaxQuantite);
+router.get("/:id",                                 verifyToken, isStaff, getProduitEntrepriseById);
+router.post("/",                         verifyToken, isAdmin, createProduitEntreprise);
+router.put("/:id",                       verifyToken, isAdmin, updateProduitEntreprise);
+router.delete("/:id",                    verifyToken, isAdmin, deleteProduitEntreprise);
+ 
 module.exports = router;

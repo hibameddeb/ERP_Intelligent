@@ -1,194 +1,281 @@
-const pool = require('../config/db');
-const { logAction } = require('../utils/logs');
-const { sendStockAlertEmail } = require('../utils/mailer');
+const pool = require("../config/db");
 
-exports.getAllProduits = async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT p.*, 
-            (SELECT image_url FROM produit_image WHERE id_produit = p.id AND is_primary = true LIMIT 1) as main_image
-            FROM produit p 
-            ORDER BY p.nom_produit ASC
-        `);
-        res.status(200).json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: "Erreur lors de la récupération des produits." });
-    }
+
+const getAllProduitsEntreprise = async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        pe.*,
+        pf.nom_produit_f        AS fournisseur_nom_produit,
+        pf.prix_unitaire_ht     AS fournisseur_prix_ht,
+        pf.taux_tva,
+        pf.taux_fodec,
+        pf.taux_dc,
+        f.nom_societe           AS fournisseur_societe,
+        (
+          SELECT image_url FROM produit_image
+          WHERE id_produit = pf.id AND is_primary = true LIMIT 1
+        ) AS main_image
+      FROM produit_entreprise pe
+      LEFT JOIN produit_fournisseur pf ON pf.id = pe.id_produit_f
+      LEFT JOIN fournisseur f ON f.id_utilisateur = pf.id_fournisseur
+      ORDER BY pe.id DESC
+    `);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error("[getAllProduitsEntreprise]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-exports.createProduit = async (req, res) => {
-    // ✅ categorie et quantite ajoutés
-    const { nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, categorie, quantite } = req.body;
-    const images = req.files;
 
-    // ✅ Validation quantite
-    if (quantite !== undefined && (isNaN(quantite) || parseInt(quantite) < 0)) {
-        return res.status(400).json({ message: "La quantité doit être un entier positif." });
+const getProduitEntrepriseById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        pe.*,
+        pf.nom_produit_f, pf.prix_unitaire_ht AS fournisseur_prix_ht,
+        pf.taux_tva, pf.taux_fodec, pf.taux_dc,
+        f.nom_societe AS fournisseur_societe,
+        (
+          SELECT image_url FROM produit_image
+          WHERE id_produit = pf.id AND is_primary = true LIMIT 1
+        ) AS main_image
+      FROM produit_entreprise pe
+      LEFT JOIN produit_fournisseur pf ON pf.id = pe.id_produit_f
+      LEFT JOIN fournisseur f ON f.id_utilisateur = pf.id_fournisseur
+      WHERE pe.id = $1
+    `, [id]);
+    if (!rows.length) return res.status(404).json({ success: false, message: "Produit introuvable." });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+const getProduitsFromFacture = async (req, res) => {
+  const { id_facture } = req.params;
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        dfa.id                  AS detail_id,
+        dfa.id_facture_achat,
+        dfa.id_produit_fournisseur,
+        dfa.quantite,
+        dfa.prix_unitaire_ht,
+        pf.nom_produit_f,
+        pf.description_f,
+        pf.taux_tva,
+        pf.taux_fodec,
+        pf.taux_dc,
+        f.nom_societe           AS fournisseur_societe,
+        (
+          SELECT image_url FROM produit_image
+          WHERE id_produit = pf.id AND is_primary = true LIMIT 1
+        ) AS main_image,
+        -- flag: already imported?
+        EXISTS (
+          SELECT 1 FROM produit_entreprise pe
+          WHERE pe.id_produit_f = dfa.id_produit_fournisseur
+        ) AS already_imported
+      FROM detail_facture_achat dfa
+      JOIN produit_fournisseur pf ON pf.id = dfa.id_produit_fournisseur
+      LEFT JOIN fournisseur f ON f.id_utilisateur = pf.id_fournisseur
+      WHERE dfa.id_facture_achat = $1
+      ORDER BY dfa.id
+    `, [id_facture]);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error("[getProduitsFromFacture]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getFacturesAchat = async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        fa.id, fa.num_facture, fa.date_creation, fa.statut, fa.total_ttc,
+        f.nom_societe AS fournisseur_societe
+      FROM facture_achat fa
+      LEFT JOIN fournisseur f ON f.id_utilisateur = fa.id_fournisseur
+      ORDER BY fa.date_creation DESC
+    `);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+const createProduitEntreprise = async (req, res) => {
+  const {
+    id_produit_f,
+    nom_commercial,
+    description_interne,
+    quantite,
+    prix_vente_ht,
+  } = req.body;
+
+  if (!nom_commercial || prix_vente_ht === undefined || prix_vente_ht === null) {
+    return res.status(400).json({
+      success: false,
+      message: "Champs obligatoires : nom_commercial, prix_vente_ht",
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    if (id_produit_f) {
+      const check = await client.query(
+        "SELECT id FROM produit_fournisseur WHERE id = $1", [id_produit_f]
+      );
+      if (!check.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ success: false, message: "Produit fournisseur introuvable." });
+      }
+
+      // ── Stock validation: cannot exceed total invoiced quantity ──
+      const stockRes = await client.query(`
+        SELECT COALESCE(SUM(dfa.quantite), 0) AS total_facture
+        FROM detail_facture_achat dfa
+        WHERE dfa.id_produit_fournisseur = $1
+      `, [id_produit_f]);
+
+      const totalFacture = parseFloat(stockRes.rows[0].total_facture);
+      const qteRequested = parseInt(quantite) || 0;
+
+      if (qteRequested > totalFacture) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          success: false,
+          message: `Quantité invalide : vous avez reçu ${totalFacture} unité(s) en facture. Vous ne pouvez pas en enregistrer ${qteRequested}.`,
+          max_quantite: totalFacture,
+        });
+      }
     }
 
-    const db = await pool.connect();
-    try {
-        await db.query('BEGIN');
+    const { rows } = await client.query(`
+      INSERT INTO produit_entreprise
+        (id_produit_f, nom_commercial, description_interne, quantite, prix_vente_ht, updated_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING *
+    `, [
+      id_produit_f || null,
+      nom_commercial,
+      description_interne || null,
+      parseInt(quantite) || 0,
+      parseFloat(prix_vente_ht),
+    ]);
 
-        const produitRes = await db.query(
-            `INSERT INTO produit (nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, categorie, quantite) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-            [nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc,
-             categorie || null, quantite !== undefined ? parseInt(quantite) : 0]
-        );
-        const produitId = produitRes.rows[0].id;
+    await client.query("COMMIT");
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[createProduitEntreprise]", err);
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+};
 
-        if (images && images.length > 0) {
-            for (let i = 0; i < images.length; i++) {
-                const path = `/uploads/produits/${images[i].filename}`;
-                const primary = (i === 0);
-                await db.query(
-                    `INSERT INTO produit_image (id_produit, image_url, is_primary) VALUES ($1, $2, $3)`,
-                    [produitId, path, primary]
-                );
-            }
+const updateProduitEntreprise = async (req, res) => {
+  const { id } = req.params;
+  const { nom_commercial, description_interne, quantite, prix_vente_ht } = req.body;
+
+  try {
+    // ── Stock validation on update ──
+    if (quantite !== undefined && quantite !== null) {
+      const existing = await pool.query(
+        "SELECT id_produit_f FROM produit_entreprise WHERE id = $1", [id]
+      );
+      if (!existing.rows.length) {
+        return res.status(404).json({ success: false, message: "Produit introuvable." });
+      }
+
+      const id_produit_f = existing.rows[0].id_produit_f;
+
+      if (id_produit_f) {
+        const stockRes = await pool.query(`
+          SELECT COALESCE(SUM(dfa.quantite), 0) AS total_facture
+          FROM detail_facture_achat dfa
+          WHERE dfa.id_produit_fournisseur = $1
+        `, [id_produit_f]);
+
+        const totalFacture = parseFloat(stockRes.rows[0].total_facture);
+        const qteRequested = parseInt(quantite);
+
+        if (qteRequested > totalFacture) {
+          return res.status(400).json({
+            success: false,
+            message: `Quantité invalide : vous avez reçu ${totalFacture} unité(s) en facture. Vous ne pouvez pas en enregistrer ${qteRequested}.`,
+            max_quantite: totalFacture,
+          });
         }
-
-        await db.query('COMMIT');
-        await logAction(req.user.id, "CREATE_PRODUCT", `Produit créé : ${nom_produit}`);
-        await checkAndNotifyStock(produitId, nom_produit, quantite);
-        res.status(201).json({ message: "Produit créé avec succès." });
-
-    } catch (err) {
-        await db.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
-    } finally {
-        db.release();
+      }
     }
+
+    const { rows } = await pool.query(`
+      UPDATE produit_entreprise SET
+        nom_commercial      = COALESCE($1, nom_commercial),
+        description_interne = COALESCE($2, description_interne),
+        quantite            = COALESCE($3, quantite),
+        prix_vente_ht       = COALESCE($4, prix_vente_ht),
+        updated_at          = NOW()
+      WHERE id = $5
+      RETURNING *
+    `, [nom_commercial, description_interne, quantite ? parseInt(quantite) : null,
+        prix_vente_ht ? parseFloat(prix_vente_ht) : null, id]);
+
+    if (!rows.length) return res.status(404).json({ success: false, message: "Produit introuvable." });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) {
+    console.error("[updateProduitEntreprise]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-exports.updateProduit = async (req, res) => {
-    const { id } = req.params;
-    const { nom_produit, description, prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, categorie, quantite } = req.body;
-    const images = req.files;
 
-    console.log('req.body:', req.body);
-
-    if (!nom_produit || !prix_unitaire_ht) {
-        return res.status(400).json({ message: "Nom et prix sont obligatoires." });
-    }
-
-    const db = await pool.connect();
-    try {
-        await db.query('BEGIN');
-
-        const result = await db.query(
-            `UPDATE produit 
-             SET nom_produit=$1, description=$2, prix_unitaire_ht=$3,
-                 taux_tva=$4, taux_fodec=$5, taux_dc=$6, categorie=$7, quantite=$8,
-                 updated_at=NOW()
-             WHERE id=$9 RETURNING *`,
-            [
-                nom_produit,
-                description || null,
-                parseFloat(prix_unitaire_ht),
-                parseFloat(taux_tva) || 0,
-                parseFloat(taux_fodec) || 0,
-                parseFloat(taux_dc) || 0,
-                categorie || null,
-                parseInt(quantite) || 0,  
-                id
-            ]
-        );
-
-        if (result.rowCount === 0) {
-            await db.query('ROLLBACK');
-            return res.status(404).json({ message: "Produit non trouvé." });
-        }
-
-        if (images && images.length > 0) {
-            for (const image of images) {
-                const imagePath = `/uploads/produits/${image.filename}`;
-                await db.query(
-                    `INSERT INTO produit_image (id_produit, image_url, is_primary) VALUES ($1, $2, false)`,
-                    [id, imagePath]
-                );
-            }
-        }
-
-        await db.query('COMMIT');
-        await logAction(req.user.id, "UPDATE_PRODUCT", `Produit modifié ID: ${id}`);
-        await checkAndNotifyStock(id, nom_produit, quantite);
-        res.status(200).json({ message: "Produit mis à jour avec succès." });
-
-    } catch (err) {
-        await db.query('ROLLBACK');
-        res.status(500).json({ error: err.message });
-    } finally {
-        db.release();
-    }
-};
-exports.deleteProduit = async (req, res) => {
-    const { id } = req.params;
-    try {
-        // Check if any non-delivered orders contain this product
-        const pendingOrders = await pool.query(
-            `SELECT COUNT(*) 
-             FROM commande_produit cp
-             JOIN commande c ON c.id = cp.id_commande
-             WHERE cp.id_produit = $1
-             AND c.statut != 'livree'`,
-            [id]
-        );
-
-        if (parseInt(pendingOrders.rows[0].count) > 0) {
-            return res.status(400).json({
-                message: "Impossible de supprimer ce produit : certaines commandes le contenant ne sont pas encore livrées."
-            });
-        }
-
-        const result = await pool.query('DELETE FROM produit WHERE id = $1', [id]);
-        if (result.rowCount === 0) return res.status(404).json({ message: "Produit non trouvé." });
-
-        await logAction(req.user.id, "DELETE_PRODUCT", `Produit supprimé ID: ${id}`);
-        res.status(200).json({ message: "Produit supprimé avec succès." });
-
-    } catch (err) {
-        res.status(500).json({ error: "Impossible de supprimer le produit (il est peut-être lié à des factures)." });
-    }
+const deleteProduitEntreprise = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      "DELETE FROM produit_entreprise WHERE id = $1 RETURNING id", [id]
+    );
+    if (!result.rows.length) return res.status(404).json({ success: false, message: "Produit introuvable." });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[deleteProduitEntreprise]", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-exports.getProduitImages = async (req, res) => {
-    const { id } = req.params;
-    try {
-        const result = await pool.query(
-            `SELECT * FROM produit_image WHERE id_produit = $1 ORDER BY is_primary DESC`,
-            [id]
-        );
-        res.status(200).json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+// ── GET MAX STOCK for a produit_fournisseur (sum of all invoiced quantities) ──
+const getMaxQuantite = async (req, res) => {
+  const { id_produit_f } = req.params;
+  try {
+    const { rows } = await pool.query(`
+      SELECT COALESCE(SUM(quantite), 0) AS total_facture
+      FROM detail_facture_achat
+      WHERE id_produit_fournisseur = $1
+    `, [id_produit_f]);
+    res.json({ success: true, max_quantite: parseFloat(rows[0].total_facture) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const checkAndNotifyStock = async (produitId, nomProduit, quantite) => {
-    const qty = parseInt(quantite) || 0;
-    if (qty > 5) return;
-
-    const type    = qty === 0 ? 'STOCK_RUPTURE' : 'STOCK_FAIBLE';
-    const message = qty === 0
-        ? `Rupture de stock : "${nomProduit}" — plus aucune unité disponible.`
-        : `Stock faible : "${nomProduit}" — seulement ${qty} unité(s) restante(s).`;
-
-    try {
-        
-        const existing = await pool.query(
-            `SELECT id FROM notification 
-             WHERE id_produit = $1 AND type = $2 AND is_read = false`,
-            [produitId, type]
-        );
-        if (existing.rows.length > 0) return; 
-
-        await pool.query(
-            `INSERT INTO notification (type, message, id_produit) VALUES ($1, $2, $3)`,
-            [type, message, produitId]
-        );
-    } catch (err) {
-        console.error('Notification insert failed:', err.message);
-    }
+module.exports = {
+  getAllProduitsEntreprise,
+  getProduitEntrepriseById,
+  getProduitsFromFacture,
+  getFacturesAchat,
+  createProduitEntreprise,
+  updateProduitEntreprise,
+  deleteProduitEntreprise,
+  getMaxQuantite,
 };

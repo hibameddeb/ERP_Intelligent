@@ -1,10 +1,13 @@
-
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const factureController = require('../controllers/factureController');
-router.get('/factures', factureController.getAllFactures);
-router.get('/factures/:id', factureController.getFactureById);
-router.post('/factures', factureController.createFacture);
-router.patch('/factures/:id/emettre', factureController.emettreFacture);
-router.patch('/factures/:id/payer', factureController.payerFacture);
-router.patch('/factures/:id/annuler', factureController.annulerFacture);
+const factureController = require("../controllers/factureController");
+
+router.get("/", factureController.getAllFactures);
+router.get("/:id", factureController.getFactureById);
+router.post("/", factureController.createFacture);
+router.patch("/:id/emettre", factureController.emettreFacture);
+router.patch("/:id/payer", factureController.payerFacture);
+router.patch("/:id/annuler", factureController.annulerFacture);
+
+
+module.exports = router;

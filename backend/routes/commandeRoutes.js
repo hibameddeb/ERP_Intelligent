@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const commandeController = require('../controllers/commandeController');
+const { verifyToken } = require('../middleware/authMiddleware');
 
-router.get('/', commandeController.getAllCommandes);
-router.get('/:id',commandeController.getCommandeById);
-router.post('/',commandeController.createCommande);
-router.post('/:id/valider', commandeController.validerCommande);
-router.post('/:id/cancel',  commandeController.cancelCommande);
+router.get('/', verifyToken, commandeController.getAllCommandes);
+router.get('/mes-commandes', verifyToken, commandeController.getMesCommandes);
+router.get('/:id', verifyToken, commandeController.getCommandeById);
+router.post('/', verifyToken, commandeController.createCommande);
+router.post('/:id/valider', verifyToken, commandeController.validerCommande);
+router.post('/:id/cancel', verifyToken, commandeController.cancelCommande);
 
-module.exports = router;
+module.exports = router;
