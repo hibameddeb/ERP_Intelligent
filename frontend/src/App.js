@@ -8,6 +8,7 @@ import CommercialDashboard from './pages/DashboardCommercial';
 import GestionFournisseurs from './pages/GestionFournisseurs';
 import DashboardFournisseur from './pages/DashboardFournisseur';
 import Factures from "./pages/Factures";
+import DashboardComptable from "./pages/Dashboardcomptable";
 function App() {
   return (
     <Router>
@@ -36,7 +37,7 @@ function App() {
             <GestionFournisseurs />
         </ProtectedRoute>
     } />
-    
+    <Route path="/dashboard/comptable" element={<DashboardComptable />} />
     <Route path="/factures" element={<Factures />} />
       </Routes>
     

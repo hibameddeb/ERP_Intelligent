@@ -37,7 +37,8 @@ const getFactureById = async (req, res) => {
   const db = await pool.connect();
   try {
     const factureResult = await db.query(`
-      SELECT f.*, u_com.nom AS commercial_nom, u_com.prenom AS commercial_prenom,
+      SELECT f.*,
+             u_com.nom AS commercial_nom, u_com.prenom AS commercial_prenom,
              c.identifiant AS client_identifiant, c.adresse AS client_adresse, c.ville AS client_ville,
              u_cli.nom AS client_nom, u_cli.prenom AS client_prenom
       FROM facture_vente f
@@ -46,14 +47,25 @@ const getFactureById = async (req, res) => {
       LEFT JOIN utilisateur u_cli ON u_cli.id = c.id_utilisateur
       WHERE f.id = $1
     `, [id]);
-    if (!factureResult.rows.length) return res.status(404).json({ success: false, message: "Facture introuvable." });
+
+    if (!factureResult.rows.length)
+      return res.status(404).json({ success: false, message: "Facture introuvable." });
+
+    // ✅ taux_tva et taux_fodec sont dans produit_fournisseur, pas produit_entreprise
     const detailsResult = await db.query(`
-      SELECT dfv.*, pe.nom_commercial AS nom_produit, pe.taux_tva, pe.taux_fodec, pe.taux_dc,
-             (dfv.quantite * dfv.prix_unitaire_ht_ap) AS total_ht_ligne
+      SELECT
+        dfv.*,
+        pe.nom_commercial                             AS nom_produit,
+        COALESCE(pf.taux_tva,   0)                    AS taux_tva,
+        COALESCE(pf.taux_fodec, 0)                    AS taux_fodec,
+        COALESCE(pf.taux_dc,    0)                    AS taux_dc,
+        (dfv.quantite * dfv.prix_unitaire_ht_ap)      AS total_ht_ligne
       FROM detail_facture_vente dfv
-      LEFT JOIN produit_entreprise pe ON pe.id = dfv.id_produit_entreprise
+      LEFT JOIN produit_entreprise  pe ON pe.id = dfv.id_produit_entreprise
+      LEFT JOIN produit_fournisseur pf ON pf.id = pe.id_produit_f
       WHERE dfv.id_facture_vente = $1
     `, [id]);
+
     await logActivity(db, { id_utilisateur: req.user?.id || null, action: "CONSULTER_FACTURE", description: `Facture vente #${id}` });
     return res.status(200).json({ success: true, data: { facture: factureResult.rows[0], details: detailsResult.rows } });
   } catch (err) {
@@ -75,7 +87,15 @@ const createFacture = async (req, res) => {
     let total_ht = 0, total_tva = 0, total_fodec = 0, total_ttc = 0;
     const lignesValidees = [];
     for (const ligne of details) {
-      const pRes = await db.query(`SELECT prix_vente_ht, taux_tva, taux_fodec, taux_dc FROM produit_entreprise WHERE id = $1`, [ligne.id_produit]);
+      const pRes = await db.query(`
+        SELECT pe.prix_vente_ht,
+               COALESCE(pf.taux_tva,   0) AS taux_tva,
+               COALESCE(pf.taux_fodec, 0) AS taux_fodec,
+               COALESCE(pf.taux_dc,    0) AS taux_dc
+        FROM produit_entreprise pe
+        LEFT JOIN produit_fournisseur pf ON pf.id = pe.id_produit_f
+        WHERE pe.id = $1
+      `, [ligne.id_produit]);
       if (!pRes.rows.length) { await db.query("ROLLBACK"); return res.status(400).json({ success: false, message: `Produit id=${ligne.id_produit} introuvable.` }); }
       const p = pRes.rows[0];
       const qty = parseFloat(ligne.quantite) || 0;
@@ -147,10 +167,9 @@ const annulerFacture = async (req, res) => {
   finally { db.release(); }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // FACTURES ACHAT
-// fournisseur PK is id_utilisateur (no numeric id column)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 
 const getAllFacturesAchat = async (req, res) => {
   const db = await pool.connect();
@@ -190,14 +209,20 @@ const getFactureAchatById = async (req, res) => {
       LEFT JOIN utilisateur  u_f ON u_f.id            = fo.id_utilisateur
       WHERE fa.id = $1
     `, [id]);
-    if (!factureResult.rows.length) return res.status(404).json({ success: false, message: "Facture achat introuvable." });
+    if (!factureResult.rows.length)
+      return res.status(404).json({ success: false, message: "Facture achat introuvable." });
+
     const detailsResult = await db.query(`
-      SELECT dfa.*, pf.nom_produit_f AS nom_produit, pf.taux_tva, pf.taux_fodec,
+      SELECT dfa.*,
+             pf.nom_produit_f AS nom_produit,
+             COALESCE(pf.taux_tva,   0) AS taux_tva,
+             COALESCE(pf.taux_fodec, 0) AS taux_fodec,
              (dfa.quantite * dfa.prix_unitaire_ht) AS total_ht_ligne
       FROM detail_facture_achat dfa
       LEFT JOIN produit_fournisseur pf ON pf.id = dfa.id_produit_fournisseur
       WHERE dfa.id_facture_achat = $1
     `, [id]);
+
     await logActivity(db, { id_utilisateur: req.user?.id || null, action: "CONSULTER_FACTURE_ACHAT", description: `Facture achat #${id}` });
     return res.status(200).json({ success: true, data: { facture: factureResult.rows[0], details: detailsResult.rows } });
   } catch (err) {
@@ -213,11 +238,8 @@ const createFactureAchat = async (req, res) => {
     const { id_fournisseur, id_societe, id_comptable, id_commande_achat, num_facture, trimestre, date_echeance, details = [] } = req.body;
     if (!id_fournisseur || !id_societe) { await db.query("ROLLBACK"); return res.status(400).json({ success: false, message: "id_fournisseur et id_societe sont requis." }); }
     if (!details.length) { await db.query("ROLLBACK"); return res.status(400).json({ success: false, message: "Au moins un produit est requis." }); }
-
-    // ✅ FIXED: fournisseur PK is id_utilisateur
     const fCheck = await db.query(`SELECT id_utilisateur FROM fournisseur WHERE id_utilisateur = $1`, [id_fournisseur]);
     if (!fCheck.rows.length) { await db.query("ROLLBACK"); return res.status(404).json({ success: false, message: "Fournisseur introuvable." }); }
-
     let total_ht = 0, total_tva = 0, total_fodec = 0, total_ttc = 0;
     const lignesValidees = [];
     for (const ligne of details) {
