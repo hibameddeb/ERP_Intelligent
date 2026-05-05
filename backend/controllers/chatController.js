@@ -1,10 +1,32 @@
 const pool = require("../config/db");
 
+// ── Périmètre de ce contrôleur : chat support ADMIN ↔ FOURNISSEUR ────────────
+const SUPPORT_ROLES = ['ADMIN', 'FOURNISSEUR'];
+
 exports.sendMessage = async (req, res) => {
   const { id_destinataire, contenu } = req.body;
   const id_expediteur = req.user.id;
 
+  if (!id_destinataire || !contenu) {
+    return res.status(400).json({ error: "Destinataire et contenu requis" });
+  }
+
   try {
+    // Vérifier que les deux participants ont des rôles autorisés pour le support
+    const check = await pool.query(
+      `SELECT
+         (SELECT role FROM utilisateur WHERE id = $1) AS role_expediteur,
+         (SELECT role FROM utilisateur WHERE id = $2) AS role_destinataire`,
+      [id_expediteur, id_destinataire]
+    );
+    const { role_expediteur, role_destinataire } = check.rows[0] || {};
+    if (
+      !SUPPORT_ROLES.includes(role_expediteur) ||
+      !SUPPORT_ROLES.includes(role_destinataire)
+    ) {
+      return res.status(403).json({ error: "Conversation non autorisée pour le support" });
+    }
+
     const query = `
       INSERT INTO message_chat (id_expediteur, id_destinataire, contenu)
       VALUES ($1, $2, $3) RETURNING *`;
@@ -21,18 +43,27 @@ exports.getConversation = async (req, res) => {
   const userId = req.user.id;
 
   try {
+    // Filtre : on ne récupère que les messages où les DEUX participants
+    // sont ADMIN ou FOURNISSEUR (sinon ils appartiennent au système client/commercial)
     const query = `
-      SELECT * FROM message_chat
-      WHERE (id_expediteur = $1 AND id_destinataire = $2)
-         OR (id_expediteur = $2 AND id_destinataire = $1)
-      ORDER BY date_envoi ASC`;
-    const result = await pool.query(query, [userId, contactId]);
+      SELECT m.*
+      FROM message_chat m
+      JOIN utilisateur ue ON ue.id = m.id_expediteur
+      JOIN utilisateur ud ON ud.id = m.id_destinataire
+      WHERE
+        ((m.id_expediteur = $1 AND m.id_destinataire = $2)
+         OR (m.id_expediteur = $2 AND m.id_destinataire = $1))
+        AND ue.role = ANY($3::varchar[])
+        AND ud.role = ANY($3::varchar[])
+      ORDER BY m.date_envoi ASC`;
+    const result = await pool.query(query, [userId, contactId, SUPPORT_ROLES]);
     res.json(result.rows);
   } catch (err) {
     console.error("getConversation error:", err);
     res.status(500).json({ error: "Erreur récupération messages" });
   }
 };
+
 exports.getAdminContact = async (req, res) => {
   try {
     const result = await pool.query(

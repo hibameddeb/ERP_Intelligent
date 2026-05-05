@@ -7,6 +7,7 @@ import 'providers/cart_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home/main_layout.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const MyApp(),
     ),
@@ -29,6 +31,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'ERP Commercial App',
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,                         
+      themeMode: context.watch<ThemeProvider>().themeMode,
       debugShowCheckedModeBanner: false,
       home: const SplashScreen(),
     );
@@ -56,7 +60,10 @@ class _SplashScreenState extends State<SplashScreen> {
     
     if (mounted) {
       if (token != null) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainLayout()));
+        await context.read<AuthProvider>().loadUserFromPrefs();
+        if (mounted) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainLayout()));
+        }
       } else {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
       }

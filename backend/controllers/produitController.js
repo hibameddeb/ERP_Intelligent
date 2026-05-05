@@ -14,7 +14,9 @@ const getAllProduitsEntreprise = async (req, res) => {
         f.nom_societe           AS fournisseur_societe,
         (
           SELECT image_url FROM produit_image
-          WHERE id_produit = pf.id AND is_primary = true LIMIT 1
+          WHERE id_produit = pf.id
+          ORDER BY is_primary DESC, id ASC
+          LIMIT 1
         ) AS main_image
       FROM produit_entreprise pe
       LEFT JOIN produit_fournisseur pf ON pf.id = pe.id_produit_f
@@ -40,7 +42,9 @@ const getProduitEntrepriseById = async (req, res) => {
         f.nom_societe AS fournisseur_societe,
         (
           SELECT image_url FROM produit_image
-          WHERE id_produit = pf.id AND is_primary = true LIMIT 1
+          WHERE id_produit = pf.id
+          ORDER BY is_primary DESC, id ASC
+          LIMIT 1
         ) AS main_image
       FROM produit_entreprise pe
       LEFT JOIN produit_fournisseur pf ON pf.id = pe.id_produit_f
@@ -73,9 +77,10 @@ const getProduitsFromFacture = async (req, res) => {
         f.nom_societe           AS fournisseur_societe,
         (
           SELECT image_url FROM produit_image
-          WHERE id_produit = pf.id AND is_primary = true LIMIT 1
+          WHERE id_produit = pf.id
+          ORDER BY is_primary DESC, id ASC
+          LIMIT 1
         ) AS main_image,
-        -- flag: already imported?
         EXISTS (
           SELECT 1 FROM produit_entreprise pe
           WHERE pe.id_produit_f = dfa.id_produit_fournisseur
@@ -110,6 +115,16 @@ const getFacturesAchat = async (req, res) => {
 };
 
 
+// ─────────────────────────────────────────────
+// CREATE produit_entreprise (premier import manuel uniquement)
+//
+// Règles :
+//   1. Un produit_fournisseur ne peut être importé qu'UNE seule fois.
+//      Le réapprovisionnement suivant se fait automatiquement à la
+//      livraison (voir marquerLivraison).
+//   2. La quantité importée ne peut pas dépasser ce qui a été livré
+//      (commandes en statut 'livrée').
+// ─────────────────────────────────────────────
 const createProduitEntreprise = async (req, res) => {
   const {
     id_produit_f,
@@ -131,33 +146,56 @@ const createProduitEntreprise = async (req, res) => {
     await client.query("BEGIN");
 
     if (id_produit_f) {
+      // 1. Le produit_fournisseur existe-t-il ?
       const check = await client.query(
         "SELECT id FROM produit_fournisseur WHERE id = $1", [id_produit_f]
       );
       if (!check.rows.length) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ success: false, message: "Produit fournisseur introuvable." });
+        return res.status(404).json({
+          success: false,
+          message: "Produit fournisseur introuvable."
+        });
       }
 
-      // ── Stock validation: cannot exceed total invoiced quantity ──
+      // 2. Empêcher la double importation
+      const dup = await client.query(
+        "SELECT id FROM produit_entreprise WHERE id_produit_f = $1",
+        [id_produit_f]
+      );
+      if (dup.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          success: false,
+          message: "Ce produit est déjà importé. Le réapprovisionnement est automatique à la livraison.",
+          existing_id: dup.rows[0].id,
+        });
+      }
+
+      // 3. Validation contre les quantités livrées
       const stockRes = await client.query(`
-        SELECT COALESCE(SUM(dfa.quantite), 0) AS total_facture
+        SELECT COALESCE(SUM(dfa.quantite), 0) AS total_livre
         FROM detail_facture_achat dfa
+        JOIN facture_achat   fa ON fa.id = dfa.id_facture_achat
+        JOIN commande_achat  ca ON ca.id = fa.id_commande_achat
         WHERE dfa.id_produit_fournisseur = $1
+          AND ca.statut = 'livrée'
       `, [id_produit_f]);
 
-      const totalFacture = parseFloat(stockRes.rows[0].total_facture);
+      const totalLivre   = parseFloat(stockRes.rows[0].total_livre) || 0;
       const qteRequested = parseInt(quantite) || 0;
 
-      if (qteRequested > totalFacture) {
+      if (qteRequested > totalLivre) {
         await client.query("ROLLBACK");
         return res.status(400).json({
           success: false,
-          message: `Quantité invalide : vous avez reçu ${totalFacture} unité(s) en facture. Vous ne pouvez pas en enregistrer ${qteRequested}.`,
-          max_quantite: totalFacture,
+          message: `Quantité invalide : ${totalLivre} unité(s) livrée(s). Vous ne pouvez pas en enregistrer ${qteRequested}.`,
+          max_quantite: totalLivre,
         });
       }
     }
+
+    const qte = Math.max(0, parseInt(quantite) || 0);
 
     const { rows } = await client.query(`
       INSERT INTO produit_entreprise
@@ -168,7 +206,7 @@ const createProduitEntreprise = async (req, res) => {
       id_produit_f || null,
       nom_commercial,
       description_interne || null,
-      parseInt(quantite) || 0,
+      qte,
       parseFloat(prix_vente_ht),
     ]);
 
@@ -183,13 +221,31 @@ const createProduitEntreprise = async (req, res) => {
   }
 };
 
+
+// ─────────────────────────────────────────────
+// UPDATE produit_entreprise
+//
+// L'admin peut éditer librement nom_commercial, description, prix.
+// Pour la quantité : on autorise les corrections manuelles tant
+// qu'elles restent >= 0 et <= total livré.
+// Le restock automatique à la livraison passe par UPDATE direct
+// dans marquerLivraison, ce qui ne déclenche pas cet endpoint.
+// ─────────────────────────────────────────────
 const updateProduitEntreprise = async (req, res) => {
   const { id } = req.params;
   const { nom_commercial, description_interne, quantite, prix_vente_ht } = req.body;
 
   try {
-    // ── Stock validation on update ──
     if (quantite !== undefined && quantite !== null) {
+      const qteRequested = parseInt(quantite);
+
+      if (Number.isNaN(qteRequested) || qteRequested < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "La quantité doit être un entier positif ou zéro.",
+        });
+      }
+
       const existing = await pool.query(
         "SELECT id_produit_f FROM produit_entreprise WHERE id = $1", [id]
       );
@@ -201,19 +257,21 @@ const updateProduitEntreprise = async (req, res) => {
 
       if (id_produit_f) {
         const stockRes = await pool.query(`
-          SELECT COALESCE(SUM(dfa.quantite), 0) AS total_facture
+          SELECT COALESCE(SUM(dfa.quantite), 0) AS total_livre
           FROM detail_facture_achat dfa
+          JOIN facture_achat   fa ON fa.id = dfa.id_facture_achat
+          JOIN commande_achat  ca ON ca.id = fa.id_commande_achat
           WHERE dfa.id_produit_fournisseur = $1
+            AND ca.statut = 'livrée'
         `, [id_produit_f]);
 
-        const totalFacture = parseFloat(stockRes.rows[0].total_facture);
-        const qteRequested = parseInt(quantite);
+        const totalLivre = parseFloat(stockRes.rows[0].total_livre) || 0;
 
-        if (qteRequested > totalFacture) {
+        if (qteRequested > totalLivre) {
           return res.status(400).json({
             success: false,
-            message: `Quantité invalide : vous avez reçu ${totalFacture} unité(s) en facture. Vous ne pouvez pas en enregistrer ${qteRequested}.`,
-            max_quantite: totalFacture,
+            message: `Quantité invalide : ${totalLivre} unité(s) livrée(s) au total. Vous ne pouvez pas en enregistrer ${qteRequested}.`,
+            max_quantite: totalLivre,
           });
         }
       }
@@ -228,8 +286,13 @@ const updateProduitEntreprise = async (req, res) => {
         updated_at          = NOW()
       WHERE id = $5
       RETURNING *
-    `, [nom_commercial, description_interne, quantite ? parseInt(quantite) : null,
-        prix_vente_ht ? parseFloat(prix_vente_ht) : null, id]);
+    `, [
+      nom_commercial,
+      description_interne,
+      quantite !== undefined && quantite !== null ? parseInt(quantite) : null,
+      prix_vente_ht !== undefined && prix_vente_ht !== null ? parseFloat(prix_vente_ht) : null,
+      id,
+    ]);
 
     if (!rows.length) return res.status(404).json({ success: false, message: "Produit introuvable." });
     res.json({ success: true, data: rows[0] });
@@ -254,16 +317,30 @@ const deleteProduitEntreprise = async (req, res) => {
   }
 };
 
-// ── GET MAX STOCK for a produit_fournisseur (sum of all invoiced quantities) ──
+
+// ─────────────────────────────────────────────
+// GET MAX QUANTITE pour le frontend
+//
+// Retourne le total livré pour ce produit_fournisseur
+// (commandes en statut 'livrée'). Utilisé par l'UI pour
+// limiter la saisie lors de l'import manuel.
+// ─────────────────────────────────────────────
 const getMaxQuantite = async (req, res) => {
   const { id_produit_f } = req.params;
   try {
     const { rows } = await pool.query(`
-      SELECT COALESCE(SUM(quantite), 0) AS total_facture
-      FROM detail_facture_achat
-      WHERE id_produit_fournisseur = $1
+      SELECT COALESCE(SUM(dfa.quantite), 0) AS total_livre
+      FROM detail_facture_achat dfa
+      JOIN facture_achat   fa ON fa.id = dfa.id_facture_achat
+      JOIN commande_achat  ca ON ca.id = fa.id_commande_achat
+      WHERE dfa.id_produit_fournisseur = $1
+        AND ca.statut = 'livrée'
     `, [id_produit_f]);
-    res.json({ success: true, max_quantite: parseFloat(rows[0].total_facture) });
+
+    res.json({
+      success: true,
+      max_quantite: parseFloat(rows[0].total_livre) || 0,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

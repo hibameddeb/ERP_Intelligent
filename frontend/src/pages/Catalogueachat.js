@@ -476,6 +476,7 @@ const CartPanel = ({
                     return img ? (
                       <img
                         src={`http://localhost:5000${img.image_url}`}
+                        alt={p.nom_produit_f || "produit"}
                         style={{
                           width: "100%",
                           height: "100%",
@@ -826,6 +827,7 @@ const CatalogueAchat = ({ showToast }) => {
       }
     };
     loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Filter produits

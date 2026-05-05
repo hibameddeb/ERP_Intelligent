@@ -1,4 +1,3 @@
-
 const { create } = require('xmlbuilder2');
 const pool = require('../config/db'); 
 async function fetchFactureData(idFacture) {
@@ -43,7 +42,7 @@ async function fetchFactureData(idFacture) {
     throw new Error(`Facture introuvable : id=${idFacture}`);
   }
 
-  // 2. Lignes de détail
+
   const lignesResult = await pool.query(
     `SELECT
       dfv.id,
@@ -64,9 +63,7 @@ async function fetchFactureData(idFacture) {
   };
 }
 
-/**
- * Formate une date JS en ddMMyy (format TEIF)
- */
+
 function formatDateTEIF(date) {
   const d = new Date(date);
   const dd = String(d.getDate()).padStart(2, '0');
@@ -75,13 +72,7 @@ function formatDateTEIF(date) {
   return `${dd}${mm}${yy}`;
 }
 
-/**
- * Mappe type_identifiant client → code TEIF
- * I-01 = Matricule fiscal TN (13 chars)
- * I-02 = CIN (8 chiffres)
- * I-03 = Carte séjour (9 chiffres)
- * I-04 = Autre
- */
+
 function mapTypeIdentifiant(type) {
   const map = {
     'matricule_fiscal': 'I-01',
@@ -91,11 +82,7 @@ function mapTypeIdentifiant(type) {
   return map[type] || 'I-04';
 }
 
-/**
- * Mappe type_en (facture_vente) → code document TEIF
- * I-11 = Facture normale
- * I-12 = Avoir
- */
+
 function mapTypeDocument(typeEn) {
   const map = {
     'facture': 'I-11',
@@ -117,13 +104,13 @@ async function generateTEIF(idFacture) {
   const typeDocCode = mapTypeDocument(f.type_en);
   const typeClientCode = mapTypeIdentifiant(f.c_type_identifiant);
 
-  // Calcul montant ligne par ligne
+
   const totalHT = parseFloat(f.total_ht).toFixed(3);
   const totalTTC = parseFloat(f.total_ttc).toFixed(3);
   const tva = parseFloat(f.tva).toFixed(3);
   const fodec = f.fodec ? parseFloat(f.fodec).toFixed(3) : '0.000';
 
-  // Taux TVA (déduit depuis total)
+  
   const tauxTVA = totalHT > 0
     ? Math.round((parseFloat(tva) / parseFloat(totalHT)) * 100)
     : 19;
@@ -135,30 +122,29 @@ async function generateTEIF(idFacture) {
       controlingAgency: 'TTN',
     });
 
-  // ── InvoiceHeader ───────────────────────────────────────────────────
   const header = root.ele('InvoiceHeader');
 
-  // Émetteur (Société) — matricule fiscal = type I-01
+
   header
     .ele('MessageSenderIdentifier', { type: 'I-01' })
     .txt(f.s_matricule);
 
-  // Destinataire (Client)
+ 
   header
     .ele('MessageRecieverIdentifier', { type: typeClientCode })
     .txt(f.c_identifiant);
 
-  // ── InvoiceBody ─────────────────────────────────────────────────────
+
   const body = root.ele('InvoiceBody');
 
-  // BGM — Identification du document
+
   const bgm = body.ele('Bgm');
   bgm.ele('DocumentIdentifier').txt(f.num_facture);
   bgm.ele('DocumentType', { code: typeDocCode }).txt(
     f.type_en === 'avoir' ? 'Avoir' : 'Facture'
   );
 
-  // DTM — Dates
+
   const dtm = body.ele('Dtm');
   dtm.ele('DateText', { functionCode: 'I-31', format: 'ddMMyy' })
     .txt(formatDateTEIF(f.date_creation));
@@ -168,10 +154,10 @@ async function generateTEIF(idFacture) {
       .txt(formatDateTEIF(f.date_echeance));
   }
 
-  // PartnerSection
+
   const partnerSection = body.ele('PartnerSection');
 
-  // I-61 = Émetteur (Seller)
+  
   const emetteur = partnerSection.ele('PartnerDetails', { functionCode: 'I-61' });
   const nadEmetteur = emetteur.ele('Nad');
   nadEmetteur.ele('Identifier', { type: 'I-01' }).txt(f.s_matricule);
@@ -181,7 +167,7 @@ async function generateTEIF(idFacture) {
   if (f.s_code_postal) nadEmetteur.ele('PostalCode').txt(f.s_code_postal);
   nadEmetteur.ele('Country').txt('TN');
 
-  // I-63 = Destinataire (Buyer)
+ 
   const destinataire = partnerSection.ele('PartnerDetails', { functionCode: 'I-63' });
   const nadClient = destinataire.ele('Nad');
   nadClient.ele('Identifier', { type: typeClientCode }).txt(f.c_identifiant);
@@ -190,7 +176,7 @@ async function generateTEIF(idFacture) {
   if (f.c_region) nadClient.ele('Region').txt(f.c_region);
   nadClient.ele('Country').txt('TN');
 
-  // LinSection — Lignes de facture
+  
   const linSection = body.ele('LinSection');
 
   for (let i = 0; i < lignes.length; i++) {
@@ -210,28 +196,27 @@ async function generateTEIF(idFacture) {
     lin.ele('Qty', { functionCode: 'I-51' }).txt(String(qte));
     lin.ele('Pri', { functionCode: 'I-71' }).txt(prixHT);
 
-    // TVA par ligne
+   
     const linTax = lin.ele('LinTax');
     linTax.ele('TaxRate').txt(String(tauxTVA));
 
-    // Montant ligne HT
+   
     const linMoa = lin.ele('LinMoa');
     linMoa.ele('LineAmount', { functionCode: 'I-81' }).txt(montantLigne);
   }
 
-  // InvoiceMoa — Totaux
-  const invoiceMoa = body.ele('InvoiceMoa');
-  invoiceMoa.ele('TotalAmount', { functionCode: 'I-81' }).txt(totalHT);   // Total HT
-  invoiceMoa.ele('TotalAmount', { functionCode: 'I-86' }).txt(totalTTC);  // Total TTC
 
-  // InvoiceTax — TVA globale
+  const invoiceMoa = body.ele('InvoiceMoa');
+  invoiceMoa.ele('TotalAmount', { functionCode: 'I-81' }).txt(totalHT);  
+  invoiceMoa.ele('TotalAmount', { functionCode: 'I-86' }).txt(totalTTC); 
+
   const invoiceTax = body.ele('InvoiceTax');
   const taxDetail = invoiceTax.ele('TaxDetail');
   taxDetail.ele('TaxRate').txt(String(tauxTVA));
   taxDetail.ele('TaxBase').txt(totalHT);
   taxDetail.ele('TaxAmount').txt(tva);
 
-  // FODEC si présent
+
   if (parseFloat(fodec) > 0) {
     const fodecDetail = invoiceTax.ele('TaxDetail');
     fodecDetail.ele('TaxRate').txt('1');  // FODEC = 1%

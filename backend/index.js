@@ -17,10 +17,11 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const produitFournisseurRoutes = require("./routes/Produitfournisseurroutes");
 const commandeAchatRoutes = require("./routes/commandeAchatRoutes");
 const facturesAchatRoutes = require('./routes/facturesAchatRoutes');
-
+const paymentRoutes = require("./routes/paymentRoutes");
 // NOUVELLES ROUTES : Support (Chat & Réclamations)
 const supportRoutes = require("./routes/supportRoutes");
-
+const produitRoutes = require("./routes/produitRoutes");
+const messageRoutes = require("./routes/messageRoutes");
 const app = express();
 const server = http.createServer(app); // On crée le serveur HTTP
 const io = new Server(server, {
@@ -40,17 +41,17 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRouter);
 app.use("/api/demande", demandeRoutes);
 app.use("/api/demandes", demandes);
-app.use("/api/produits", produitsRouter);
+app.use("/api/produits-entreprise", produitRoutes);
 app.use("/api/commandes", commandeRoutes);
 app.use("/api/factures", factureRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/produits-fournisseur", produitFournisseurRoutes);
 app.use("/api/commandes-achat", commandeAchatRoutes);
 app.use("/api/factures-achat", facturesAchatRoutes);
+app.use("/api/payment", paymentRoutes);
 
-// Utilisation des nouvelles routes de support
 app.use("/api/support", supportRoutes);
-
+app.use("/api/messages", messageRoutes);
 // Configuration Socket.io (Temps Réel pour le Chat)
 io.on("connection", (socket) => {
   console.log("Nouvelle connexion socket :", socket.id);

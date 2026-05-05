@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import API from "../services/api";
+import { useUnreadMessages } from "../hooks/useUnreadMessages";
+import Chat from "./Chat";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const Icon = ({ d, size = 20 }) => (
@@ -34,6 +36,8 @@ const Icons = {
   refresh:   "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15",
   trending:  "M23 6l-9.5 9.5-5-5L1 18M17 6h6v6",
   user:      "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  // ⬇️ AJOUT : icône messages (bulle de chat)
+  messages:  "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -75,6 +79,8 @@ const styles = `
   --shadow-xl:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);
   --r-sm:6px;--r:10px;--r-lg:14px;--r-xl:18px;
   --sidebar:260px;
+  /* Variables alias pour le composant Chat */
+  --accent:#3b82f6; --muted:#94a3b8; --text-2:#64748b;
 }
 body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;line-height:1.5}
 .dash{display:flex;height:100vh;overflow:hidden}
@@ -92,6 +98,9 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;line-
 .nav-item.active{background:var(--primary-l);color:var(--primary);font-weight:600}
 .nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:var(--primary);border-radius:0 3px 3px 0}
 .nav-badge{margin-left:auto;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px}
+/* ⬇️ AJOUT : badge rouge spécifique pour messages non-lus */
+.nav-badge-red{margin-left:auto;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;animation:pulseRed 2s ease infinite}
+@keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 4px rgba(239,68,68,0)}}
 .sidebar-footer{padding:12px 10px;border-top:1px solid var(--border);background:var(--surface2)}
 .user-card{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r);background:var(--surface);border:1px solid var(--border);margin-bottom:8px;box-shadow:var(--shadow-sm)}
 .avatar{width:32px;height:32px;border-radius:50%;background:var(--primary-l);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--primary);flex-shrink:0}
@@ -103,6 +112,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;line-
 .topbar{height:62px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 26px;flex-shrink:0;box-shadow:var(--shadow-sm)}
 .topbar-title{font-weight:700;font-size:16px;letter-spacing:-.02em}
 .content{flex:1;overflow-y:auto;padding:26px}
+/* ⬇️ AJOUT : variante sans padding pour le chat (qui gère son propre layout) */
+.content-flush{flex:1;overflow:hidden;padding:0}
 
 /* stats */
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:26px}
@@ -162,6 +173,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;line-
 .icon-btn-blue:hover{background:var(--primary-l);border-color:var(--primary)}
 .icon-btn-red{color:var(--danger)}
 .icon-btn-red:hover{background:var(--danger-l);border-color:var(--danger)}
+.icon-btn-green{color:var(--success)}
+.icon-btn-green:hover{background:var(--success-l);border-color:var(--success)}
 
 /* search */
 .search-box{display:flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:0 13px;height:36px;transition:all .2s;box-shadow:var(--shadow-sm)}
@@ -313,13 +326,22 @@ const Pagination = ({ total, page, perPage, onChange }) => {
 // Status helpers
 const statusColor = (s) => ({
   en_attente: 'orange', validée: 'green', annulée: 'red', livrée: 'blue',
-  VALIDEE: 'green', PAYEE: 'green', EN_RETARD: 'red', ANNULEE: 'red', BROUILLON: 'gray',
+  non_payée: 'orange', payée: 'green',
 })[s] || 'blue';
+
+const statusLabel = (s) => {
+  const labels = {
+    non_payée: 'non payée',
+    payée: 'payée',
+    annulée: 'annulée',
+  };
+  return labels[s] || s?.replace(/_/g, ' ') || '—';
+};
 
 const StatusBadge = ({ s }) => (
   <span className={`badge badge-${statusColor(s)}`}>
     <span style={{ width:5, height:5, borderRadius:'50%', background:'currentColor', display:'inline-block' }} />
-    {s?.replace(/_/g, ' ') || '—'}
+    {statusLabel(s)}
   </span>
 );
 
@@ -348,7 +370,6 @@ const ProductModal = ({ product, onClose, onAddToCart }) => {
           <p style={{ fontSize:13.5, color:'var(--text2)', lineHeight:1.7, marginBottom:16 }}>{product.description_interne}</p>
         )}
 
-        {/* Supplier info */}
         {product.fournisseur_societe && (
           <div style={{ background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'10px 14px', marginBottom:16, fontSize:12, color:'var(--text2)' }}>
             Fournisseur : <strong style={{ color:'var(--text)' }}>{product.fournisseur_societe}</strong>
@@ -586,7 +607,6 @@ const NewOrderModal = ({ cart, clients, user, onClose, onConfirm, loading, onQty
           <button className="modal-close" onClick={onClose}><Icon d={Icons.close} size={16} /></button>
         </div>
 
-        {/* Cart items */}
         <div style={{ marginBottom:14 }}>
           {cart.map((item, i) => (
             <div key={i} className="cart-item">
@@ -892,11 +912,12 @@ const OrdersPage = ({ orders, showToast, onRefresh }) => {
 };
 
 // ─── INVOICES PAGE ────────────────────────────────────────────────────────────
-const InvoicesPage = ({ factures }) => {
+const InvoicesPage = ({ factures, showToast, onRefresh }) => {
   const [search,  setSearch]  = useState('');
   const [statusF, setStatusF] = useState('');
   const [page,    setPage]    = useState(1);
   const [viewId,  setViewId]  = useState(null);
+  const [busyId,  setBusyId]  = useState(null);
 
   useEffect(() => setPage(1), [search, statusF]);
 
@@ -907,6 +928,19 @@ const InvoicesPage = ({ factures }) => {
   });
   const paginated = filtered.slice((page-1)*ITEMS_PER_PAGE, page*ITEMS_PER_PAGE);
 
+  const runAction = async (id, path, successMsg) => {
+    setBusyId(id);
+    try {
+      await API.patch(`/factures/${id}/${path}`);
+      showToast?.(successMsg, 'success');
+      onRefresh?.();
+    } catch (err) {
+      showToast?.(err.response?.data?.message || 'Erreur.', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <>
       <div className="sec-hdr">
@@ -914,7 +948,9 @@ const InvoicesPage = ({ factures }) => {
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
           <select className="flt-sel" value={statusF} onChange={e => setStatusF(e.target.value)}>
             <option value="">Tous les statuts</option>
-            {['VALIDEE','PAYEE','EN_RETARD','ANNULEE','BROUILLON'].map(s => <option key={s} value={s}>{s}</option>)}
+            {['non_payée','payée','annulée'].map(s => (
+              <option key={s} value={s}>{statusLabel(s)}</option>
+            ))}
           </select>
           <div className="search-box" style={{ width:240 }}>
             <Icon d={Icons.search} size={14} />
@@ -944,7 +980,20 @@ const InvoicesPage = ({ factures }) => {
                   </td>
                   <td><StatusBadge s={f.statut} /></td>
                   <td onClick={e => e.stopPropagation()}>
-                    <button className="icon-btn icon-btn-blue" onClick={() => setViewId(f.id)}><Icon d={Icons.eye} size={13} /></button>
+                    <div style={{ display:'flex', gap:6 }}>
+                      <button className="icon-btn icon-btn-blue" onClick={() => setViewId(f.id)} title="Voir détail"><Icon d={Icons.eye} size={13} /></button>
+                      {f.statut === 'non_payée' && (
+                        <button className="icon-btn icon-btn-green" disabled={busyId === f.id} onClick={() => runAction(f.id, 'payer', 'Facture payée.')} title="Marquer payée"><Icon d={Icons.check} size={13} /></button>
+                      )}
+                      {f.statut !== 'annulée' &&
+                        f.status_electronique !== 'submitted' &&
+                        f.status_electronique !== 'accepted' && (
+                        <button className="icon-btn icon-btn-blue" disabled={busyId === f.id} onClick={() => runAction(f.id, 'emettre', 'Facture envoyée à TTN.')} title="Envoyer à TTN"><Icon d={Icons.alert} size={13} /></button>
+                      )}
+                      {f.statut !== 'payée' && f.statut !== 'annulée' && (
+                        <button className="icon-btn icon-btn-red" disabled={busyId === f.id} onClick={() => runAction(f.id, 'annuler', 'Facture annulée.')} title="Annuler"><Icon d={Icons.ban} size={13} /></button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -1034,6 +1083,8 @@ const NAV = [
   { id:'clients',   label:'Mes clients',      icon:Icons.clients },
   { id:'orders',    label:'Commandes',        icon:Icons.orders },
   { id:'invoices',  label:'Factures',         icon:Icons.invoice },
+  // ⬇️ AJOUT : entrée Messages
+  { id:'messages',  label:'Messages',         icon:Icons.messages },
 ];
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
@@ -1049,6 +1100,9 @@ const CommercialDashboard = () => {
   const [toast,        setToast]        = useState(null);
   const [loading,      setLoading]      = useState(true);
 
+  // ⬇️ AJOUT : nombre de messages non-lus, mis à jour en temps réel via Socket.io
+  const unreadMessages = useUnreadMessages();
+
   const user = JSON.parse(localStorage.getItem('user') || '{"prenom":"Commercial","role":"COMMERCIAL"}');
 
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
@@ -1061,14 +1115,14 @@ const CommercialDashboard = () => {
     };
 
     const [prods, cls, ords, facts] = await Promise.all([
-      safeGet('/produits-entreprise'),          // GET /api/produits-entreprise → { success, data: [] }
-      safeGet('/users'),                         // GET /api/users → array (commercial gets only their clients)
-      safeGet('/commandes/mes-commandes'),       // GET /api/commandes/mes-commandes
-      safeGet('/factures'),                      // GET /api/factures → { success, data: [] }
+      safeGet('/produits-entreprise'),
+      safeGet('/users'),
+      safeGet('/commandes/mes-commandes'),
+      safeGet('/factures'),
     ]);
 
     setProduits(prods);
-    setClients(cls.filter(u => u.role === 'CLIENT' || u.client_id)); // only clients
+    setClients(cls.filter(u => u.role === 'CLIENT' || u.client_id));
     setOrders(ords);
     setFactures(facts);
     setLoading(false);
@@ -1109,7 +1163,7 @@ const CommercialDashboard = () => {
         id_commercial: user.id,
         trimestre:    trimestre || null,
         details:      cart.map(item => ({
-          id_produit:          item.id,          // backend uses id_produit or id_produit_entreprise
+          id_produit:          item.id,
           quantite_achetee:    item.qty,
           prix_unitaire_ht_ap: item.prix_vente_ht,
         })),
@@ -1131,7 +1185,14 @@ const CommercialDashboard = () => {
     ca:       factures.reduce((s, f) => s + (parseFloat(f.total_ttc) || 0), 0),
   };
 
-  const titles = { home:"Vue d'ensemble", catalogue:'Catalogue', clients:'Mes Clients', orders:'Commandes', invoices:'Factures' };
+  const titles = {
+    home:"Vue d'ensemble",
+    catalogue:'Catalogue',
+    clients:'Mes Clients',
+    orders:'Commandes',
+    invoices:'Factures',
+    messages:'Messages', // ⬅️ AJOUT
+  };
 
   const handleLogout = () => { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = '/'; };
 
@@ -1156,11 +1217,16 @@ const CommercialDashboard = () => {
               <button key={n.id} className={`nav-item ${page === n.id ? 'active' : ''}`} onClick={() => setPage(n.id)}>
                 <Icon d={n.icon} size={17} />
                 {n.label}
+                {/* Badges existants */}
                 {n.id === 'catalogue' && cart.length > 0 && (
                   <span className="nav-badge">{cart.reduce((s, i) => s + i.qty, 0)}</span>
                 )}
                 {n.id === 'orders' && orders.filter(o => o.statut === 'en_attente').length > 0 && (
                   <span className="nav-badge">{orders.filter(o => o.statut === 'en_attente').length}</span>
+                )}
+                {/* ⬇️ AJOUT : badge rouge messages non-lus, live via Socket.io */}
+                {n.id === 'messages' && unreadMessages > 0 && (
+                  <span className="nav-badge-red">{unreadMessages > 99 ? '99+' : unreadMessages}</span>
                 )}
               </button>
             ))}
@@ -1183,13 +1249,21 @@ const CommercialDashboard = () => {
         {/* Main */}
         <div className="main">
           <header className="topbar">
-            <span className="topbar-title">{titles[page]}</span>
+            <span className="topbar-title">
+              {titles[page]}
+              {/* ⬇️ AJOUT : compteur dans le titre quand on est sur Messages */}
+              {page === 'messages' && unreadMessages > 0 && (
+                <span style={{ marginLeft:10, fontSize:12, fontWeight:600, color:'var(--danger)' }}>
+                  · {unreadMessages} non lu{unreadMessages > 1 ? 's' : ''}
+                </span>
+              )}
+            </span>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               {loading && <span className="spinner" />}
-              {!loading && (
+              {!loading && page !== 'messages' && (
                 <button className="icon-btn" onClick={fetchAll} title="Actualiser"><Icon d={Icons.refresh} size={15} /></button>
               )}
-              {cart.length > 0 && (
+              {cart.length > 0 && page !== 'messages' && (
                 <button className="btn btn-primary" onClick={() => setOrderModal(true)}>
                   <Icon d={Icons.cart} size={14} />
                   Panier ({cart.reduce((s, i) => s + i.qty, 0)}) — {cartTotal.toFixed(3)} DT
@@ -1198,12 +1272,15 @@ const CommercialDashboard = () => {
             </div>
           </header>
 
-          <main className="content">
+          {/* ⬇️ Pour Messages on utilise content-flush (pas de padding) car Chat gère son layout */}
+          <main className={page === 'messages' ? 'content-flush' : 'content'}>
             {page === 'home'      && <HomePage stats={stats} clients={clients} orders={orders} />}
             {page === 'catalogue' && <CataloguePage produits={produits} cart={cart} onAddToCart={addToCart} />}
             {page === 'clients'   && <ClientsPage clients={clients} />}
             {page === 'orders'    && <OrdersPage orders={orders} showToast={showToast} onRefresh={fetchAll} />}
-            {page === 'invoices'  && <InvoicesPage factures={factures} />}
+            {page === 'invoices'  && <InvoicesPage factures={factures} showToast={showToast} onRefresh={fetchAll} />}
+            {/* ⬇️ AJOUT : page Messages = composant Chat réutilisé */}
+            {page === 'messages'  && <Chat />}
           </main>
         </div>
       </div>

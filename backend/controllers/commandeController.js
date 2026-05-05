@@ -8,6 +8,21 @@ const logActivity = async (client, { id_utilisateur, action, description }) => {
   );
 };
 
+// ─────────────────────────────────────────────
+// NOTIFICATION HELPER
+// ─────────────────────────────────────────────
+const createNotification = async ({ type, message }) => {
+  try {
+    await pool.query(
+      `INSERT INTO notification (type, message, is_read, created_at)
+       VALUES ($1, $2, false, NOW())`,
+      [type, message]
+    );
+  } catch (err) {
+    console.error("[createNotification]", err.message);
+  }
+};
+
 const analyserFraudeIA = async (commande, lignes) => {
   const payload = {
     model: "claude-sonnet-4-20250514",
@@ -338,6 +353,12 @@ const createCommande = async (req, res) => {
 
     await logActivity(db, { id_utilisateur: req.user?.id || null, action: "CREER_COMMANDE", description: `Commande #${newCmd.id} créée pour client ${id_client}` });
 
+    // ── Notification: nouvelle commande vente créée ──
+    await createNotification({
+      type: "COMMANDE_CREEE",
+      message: `Nouvelle commande de vente #${newCmd.num_ordre} créée (Total TTC : ${parseFloat(total_ttc.toFixed(3))} DT).`,
+    });
+
     return res.status(201).json({ success: true, data: { ...newCmd, score_ia_confiance: scoreIA, alerte_fraude_ia: alerteIA } });
 
   } catch (err) {
@@ -370,6 +391,13 @@ const cancelCommande = async (req, res) => {
     }
 
     await db.query("COMMIT");
+
+    // ── Notification: commande vente annulée ──
+    await createNotification({
+      type: "COMMANDE_ANNULEE",
+      message: `La commande de vente #${id} a été annulée.`,
+    });
+
     return res.json({ success: true });
   } catch (err) {
     await db.query("ROLLBACK").catch(() => {});
@@ -486,6 +514,12 @@ const validerCommande = async (req, res) => {
       id_utilisateur: req.user?.id || null,
       action: "VALIDER_COMMANDE",
       description: `Commande #${id} validée → Facture ${numFac} créée (#${newFacture.id})`,
+    });
+
+    // ── Notification: commande validée + facture vente créée ──
+    await createNotification({
+      type: "COMMANDE_VALIDEE",
+      message: `Commande de vente #${id} validée. Facture ${numFac} générée automatiquement (Total TTC : ${cmd.total_ttc} DT).`,
     });
 
     return res.json({

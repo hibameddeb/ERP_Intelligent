@@ -37,4 +37,48 @@ class AuthProvider with ChangeNotifier {
     _currentUser = null;
     notifyListeners();
   }
+
+  Future<void> loadUserFromPrefs() async {
+    _currentUser = await _authService.getUserFromPrefs();
+    notifyListeners();
+  }
+
+  Future<void> updateProfile(Map<String, dynamic> data) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      _currentUser = await _authService.updateProfile(data);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await _authService.changePassword(currentPassword, newPassword);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> uploadAvatar(String imagePath) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final avatarStr = await _authService.uploadAvatar(imagePath);
+      if (_currentUser != null) {
+        // Need to update the user with the new avatar. We construct a new map and use fromJson.
+        final json = _currentUser!.toJson();
+        json['avatar'] = avatarStr;
+        _currentUser = User.fromJson(json);
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }

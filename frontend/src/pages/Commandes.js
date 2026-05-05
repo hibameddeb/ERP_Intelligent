@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import API from '../services/api';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -159,12 +159,6 @@ const styles = `
 .cmd-livraison-btn.oui .cmd-livraison-btn-icon { background:var(--teal,#12484C); }
 .cmd-livraison-btn.non .cmd-livraison-btn-icon { background:var(--rose,#861211); }
 
-/* ── Valider date input ── */
-.cmd-date-field { display:flex; flex-direction:column; gap:6px; text-align:left; margin-bottom:20px; }
-.cmd-date-field label { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
-.cmd-date-input { background:var(--surface-2,#fff); border:1px solid var(--border); border-radius:10px; padding:9px 13px; font-family:'Outfit',sans-serif; font-size:13px; color:var(--text); outline:none; width:100%; transition:border-color .15s; }
-.cmd-date-input:focus { border-color:var(--teal,#12484C); }
-
 .cmd-detail-sec { background:var(--surface-2,#fff); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:14px; }
 .cmd-detail-sec-title { font-size:10px; font-weight:700; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; margin-bottom:14px; display:flex; align-items:center; gap:6px; padding-bottom:10px; border-bottom:1px solid var(--border); }
 .cmd-detail-grid  { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
@@ -197,6 +191,18 @@ const styles = `
 .cmd-error-box { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 20px; gap:10px; text-align:center; }
 .cmd-error-box p { font-size:14px; color:var(--text-2,#3d6372); }
 .cmd-error-box small { font-size:12px; color:var(--muted); }
+
+.cmd-info-banner {
+    display:flex; align-items:center; gap:10px;
+    background:rgba(43,117,116,.08); border:1px solid rgba(43,117,116,.18);
+    border-radius:10px; padding:10px 14px; margin-bottom:16px;
+    font-size:12.5px; color:var(--blue,#2B7574); font-weight:500;
+}
+.cmd-info-banner-icon {
+    width:22px; height:22px; border-radius:50%;
+    background:rgba(43,117,116,.15); color:var(--blue,#2B7574);
+    display:grid; place-items:center; flex-shrink:0;
+}
 
 .cmd-toast { position:fixed; bottom:28px; right:28px; background:var(--surface-2,#fff); border:1px solid var(--border); border-radius:12px; padding:12px 18px; display:flex; align-items:center; gap:10px; font-size:13px; font-weight:500; animation:cmdSlideUp .3s ease; z-index:2000; box-shadow:0 8px 32px rgba(14,41,49,.12); max-width:360px; }
 .cmd-toast.success { border-left:3px solid var(--teal,#12484C); }
@@ -317,60 +323,6 @@ const ConfirmModal = ({ type, order, onClose, onConfirm, loading }) => {
     );
 };
 
-// ─── Valider Achat Modal (avec date de livraison) ─────────────────────────────
-const ValiderAchatModal = ({ order, onClose, onConfirm, loading }) => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const minDate = tomorrow.toISOString().split('T')[0];
-
-    const [dateLivraison, setDateLivraison] = useState('');
-    const [err, setErr] = useState('');
-
-    const handleConfirm = () => {
-        if (!dateLivraison) { setErr('La date de livraison est obligatoire.'); return; }
-        if (new Date(dateLivraison) <= new Date()) { setErr('La date doit être dans le futur.'); return; }
-        setErr('');
-        onConfirm(dateLivraison);
-    };
-
-    return (
-        <div className="cmd-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div className="cmd-modal cmd-confirm">
-                <div className="cmd-confirm-icon success">
-                    <Icon d={Icons.validate} size={22} />
-                </div>
-                <h3>Accepter la commande ?</h3>
-                <p>
-                    La commande <strong>{displayRef(order)}</strong> sera acceptée.
-                    Veuillez indiquer la date de livraison prévue.
-                </p>
-
-                <div className="cmd-date-field">
-                    <label>Date de livraison prévue *</label>
-                    <input
-                        type="date"
-                        className="cmd-date-input"
-                        min={minDate}
-                        value={dateLivraison}
-                        onChange={e => { setDateLivraison(e.target.value); setErr(''); }}
-                    />
-                    {err && <span style={{ fontSize:11, color:'var(--rose,#861211)', marginTop:2 }}>{err}</span>}
-                </div>
-
-                <div className="cmd-confirm-btns">
-                    <button className="cmd-btn cmd-btn-ghost" onClick={onClose} disabled={loading}>Retour</button>
-                    <button className="cmd-btn cmd-btn-success" onClick={handleConfirm} disabled={loading}>
-                        {loading
-                            ? <><span className="cmd-btn-spinner" /> Validation...</>
-                            : <><Icon d={Icons.check} size={13} /> Confirmer</>
-                        }
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 // ─── Livraison Modal ──────────────────────────────────────────────────────────
 const LivraisonModal = ({ order, onClose, onConfirm, loading }) => (
     <div className="cmd-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -386,30 +338,16 @@ const LivraisonModal = ({ order, onClose, onConfirm, loading }) => (
                     Si livrée, une facture d'achat sera automatiquement générée.
                 </span>
             </p>
-
             <div className="cmd-livraison-choices">
-                <button
-                    className="cmd-livraison-btn oui"
-                    onClick={() => onConfirm(true)}
-                    disabled={loading}
-                >
-                    <div className="cmd-livraison-btn-icon">
-                        <Icon d={Icons.check} size={18} />
-                    </div>
+                <button className="cmd-livraison-btn oui" onClick={() => onConfirm(true)} disabled={loading}>
+                    <div className="cmd-livraison-btn-icon"><Icon d={Icons.check} size={18} /></div>
                     {loading ? <span className="cmd-btn-spinner" /> : 'Livrée'}
                 </button>
-                <button
-                    className="cmd-livraison-btn non"
-                    onClick={() => onConfirm(false)}
-                    disabled={loading}
-                >
-                    <div className="cmd-livraison-btn-icon">
-                        <Icon d={Icons.xCircle} size={18} />
-                    </div>
+                <button className="cmd-livraison-btn non" onClick={() => onConfirm(false)} disabled={loading}>
+                    <div className="cmd-livraison-btn-icon"><Icon d={Icons.xCircle} size={18} /></div>
                     {loading ? <span className="cmd-btn-spinner" /> : 'Non livrée'}
                 </button>
             </div>
-
             <div style={{ marginTop:20 }}>
                 <button className="cmd-btn cmd-btn-ghost" onClick={onClose} disabled={loading}
                     style={{ width:'100%', justifyContent:'center' }}>
@@ -552,13 +490,14 @@ const DetailVenteModal = ({ id, onClose, onValidate, onCancel }) => {
 
 // ─── Vente Panel ──────────────────────────────────────────────────────────────
 const CommandesVentePanel = ({ notify }) => {
-    const [orders,       setOrders]       = useState([]);
-    const [loading,      setLoading]      = useState(true);
-    const [search,       setSearch]       = useState('');
-    const [statusFilter, setStatusFilter] = useState('');
-    const [viewId,       setViewId]       = useState(null);
-    const [confirm,      setConfirm]      = useState(null);
-    const [actionLoad,   setActionLoad]   = useState(false);
+    const [orders,           setOrders]           = useState([]);
+    const [loading,          setLoading]          = useState(true);
+    const [search,           setSearch]           = useState('');
+    const [statusFilter,     setStatusFilter]     = useState('');
+    const [commercialFilter, setCommercialFilter] = useState('');
+    const [viewId,           setViewId]           = useState(null);
+    const [confirm,          setConfirm]          = useState(null);
+    const [actionLoad,       setActionLoad]       = useState(false);
 
     const fetchOrders = useCallback(async () => {
         setLoading(true);
@@ -568,6 +507,23 @@ const CommandesVentePanel = ({ notify }) => {
     }, [notify]);
 
     useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+    // ── Liste dédupliquée des commerciaux ─────────────────────
+    const commerciaux = useMemo(() => {
+        const seen = new Set();
+        return orders
+            .filter(o => {
+                const name = `${o.commercial_prenom || ''} ${o.commercial_nom || ''}`.trim();
+                if (!name || seen.has(name)) return false;
+                seen.add(name);
+                return true;
+            })
+            .map(o => ({
+                key: `${o.commercial_prenom || ''}_${o.commercial_nom || ''}`,
+                label: `${o.commercial_prenom || ''} ${o.commercial_nom || ''}`.trim(),
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }, [orders]);
 
     const handleValidate = async () => {
         setActionLoad(true);
@@ -586,9 +542,14 @@ const CommandesVentePanel = ({ notify }) => {
     const filtered = orders.filter(o => {
         const q = search.toLowerCase();
         const status = normalizeStatus(o.statut);
-        const matchSearch = !q || `${o.client_nom} ${o.client_prenom} ${o.commercial_nom} ${o.commercial_prenom}`.toLowerCase().includes(q) || String(o.id).includes(q) || String(o.num_ordre || '').includes(q);
-        const matchStatus = !statusFilter || status === statusFilter;
-        return matchSearch && matchStatus;
+        const matchSearch = !q
+            || `${o.client_nom} ${o.client_prenom} ${o.commercial_nom} ${o.commercial_prenom}`.toLowerCase().includes(q)
+            || String(o.id).includes(q)
+            || String(o.num_ordre || '').includes(q);
+        const matchStatus     = !statusFilter     || status === statusFilter;
+        const matchCommercial = !commercialFilter  ||
+            `${o.commercial_prenom || ''} ${o.commercial_nom || ''}`.trim() === commercialFilter;
+        return matchSearch && matchStatus && matchCommercial;
     });
 
     const stats = [
@@ -613,7 +574,11 @@ const CommandesVentePanel = ({ notify }) => {
                 <div className="cmd-toolbar-left">
                     <div className="cmd-search">
                         <Icon d={Icons.search} size={14} />
-                        <input placeholder="Rechercher client, commercial, N° commande..." value={search} onChange={e => setSearch(e.target.value)} />
+                        <input
+                            placeholder="Rechercher client, commercial, N° commande..."
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
                     </div>
                     <select className="cmd-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                         <option value="">Tous les statuts</option>
@@ -623,23 +588,46 @@ const CommandesVentePanel = ({ notify }) => {
                         <option value="facturée">Facturée</option>
                         <option value="archivée">Archivée</option>
                     </select>
+                    <select className="cmd-select" value={commercialFilter} onChange={e => setCommercialFilter(e.target.value)}>
+                        <option value="">Tous les commerciaux</option>
+                        {commerciaux.map(c => (
+                            <option key={c.key} value={c.label}>{c.label}</option>
+                        ))}
+                    </select>
                 </div>
                 <div className="cmd-toolbar-right">
-                    <button className="cmd-btn cmd-btn-ghost cmd-btn-sm" onClick={fetchOrders}><Icon d={Icons.refresh} size={14} /> Rafraîchir</button>
+                    <button className="cmd-btn cmd-btn-ghost cmd-btn-sm" onClick={fetchOrders}>
+                        <Icon d={Icons.refresh} size={14} /> Rafraîchir
+                    </button>
                 </div>
             </div>
             <div className="cmd-table-wrap">
                 <table className="cmd-table">
-                    <thead><tr><th>Référence</th><th>Client</th><th>Commercial</th><th>Date</th><th>Total TTC</th><th>Statut</th><th style={{ width:120 }}>Actions</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Référence</th><th>Client</th><th>Commercial</th>
+                            <th>Date</th><th>Total TTC</th><th>Statut</th>
+                            <th style={{ width:120 }}>Actions</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         {loading ? (
                             <tr><td colSpan={7}><div className="cmd-spinner-wrap"><span className="cmd-spinner" /> Chargement...</div></td></tr>
                         ) : filtered.length === 0 ? (
-                            <tr><td colSpan={7}><div className="cmd-empty"><div className="cmd-empty-icon"><Icon d={Icons.shop} size={40} /></div><p>Aucune commande de vente trouvée</p><small>{search || statusFilter ? 'Essayez de modifier vos filtres' : 'Les commandes apparaîtront ici'}</small></div></td></tr>
+                            <tr><td colSpan={7}>
+                                <div className="cmd-empty">
+                                    <div className="cmd-empty-icon"><Icon d={Icons.shop} size={40} /></div>
+                                    <p>Aucune commande de vente trouvée</p>
+                                    <small>{search || statusFilter || commercialFilter ? 'Essayez de modifier vos filtres' : 'Les commandes apparaîtront ici'}</small>
+                                </div>
+                            </td></tr>
                         ) : filtered.map(o => (
                             <tr key={o.id} style={{ cursor:'pointer' }} onClick={() => setViewId(o.id)}>
                                 <td><span style={{ fontFamily:'JetBrains Mono,monospace', fontSize:12, fontWeight:700, color:'var(--blue,#2B7574)' }}>{displayRef(o)}</span></td>
-                                <td><div style={{ fontWeight:600 }}>{o.client_prenom} {o.client_nom}</div><div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{o.client_ville || o.ville || '—'}</div></td>
+                                <td>
+                                    <div style={{ fontWeight:600 }}>{o.client_prenom} {o.client_nom}</div>
+                                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{o.client_ville || o.ville || '—'}</div>
+                                </td>
                                 <td style={{ color:'var(--text-2,#3d6372)' }}>{o.commercial_prenom} {o.commercial_nom}</td>
                                 <td style={{ color:'var(--muted)', fontSize:12 }}>{fmtDate(o.date_creation)}</td>
                                 <td style={{ fontFamily:'JetBrains Mono,monospace', fontWeight:700 }}>{fmtPrice(o.total_ttc)}</td>
@@ -660,8 +648,23 @@ const CommandesVentePanel = ({ notify }) => {
                     </tbody>
                 </table>
             </div>
-            {viewId && <DetailVenteModal id={viewId} onClose={() => setViewId(null)} onValidate={o => { setViewId(null); setConfirm({ type:'validate', order:o }); }} onCancel={o => { setViewId(null); setConfirm({ type:'cancel', order:o }); }} />}
-            {confirm && <ConfirmModal type={confirm.type} order={confirm.order} onClose={() => setConfirm(null)} onConfirm={confirm.type === 'validate' ? handleValidate : handleCancel} loading={actionLoad} />}
+            {viewId && (
+                <DetailVenteModal
+                    id={viewId}
+                    onClose={() => setViewId(null)}
+                    onValidate={o => { setViewId(null); setConfirm({ type:'validate', order:o }); }}
+                    onCancel={o =>   { setViewId(null); setConfirm({ type:'cancel',   order:o }); }}
+                />
+            )}
+            {confirm && (
+                <ConfirmModal
+                    type={confirm.type}
+                    order={confirm.order}
+                    onClose={() => setConfirm(null)}
+                    onConfirm={confirm.type === 'validate' ? handleValidate : handleCancel}
+                    loading={actionLoad}
+                />
+            )}
         </>
     );
 };
@@ -670,7 +673,7 @@ const CommandesVentePanel = ({ notify }) => {
 // SECTION ACHAT
 // ═══════════════════════════════════════════════════════════════
 
-const DetailAchatModal = ({ id, onClose, onValidate, onCancel, onLivraison }) => {
+const DetailAchatModal = ({ id, onClose, onLivraison }) => {
     const [data,    setData]    = useState(null);
     const [loading, setLoading] = useState(true);
     const [error,   setError]   = useState(null);
@@ -690,7 +693,7 @@ const DetailAchatModal = ({ id, onClose, onValidate, onCancel, onLivraison }) =>
     const totalTTC = dets.reduce((s, d) => { const q = Number(d.quantite || 0); return s + calcTTC(d.prix_unitaire_ht, d.taux_tva, d.taux_fodec, d.taux_dc, q); }, 0);
 
     const status    = cmd ? normalizeStatus(cmd.statut) : '';
-    const canAct    = ['en attente','en_attente'].includes(status);
+    const isPending = ['en attente','en_attente'].includes(status);
     const canLivrer = ['acceptée','acceptee'].includes(status);
 
     return (
@@ -718,6 +721,12 @@ const DetailAchatModal = ({ id, onClose, onValidate, onCancel, onLivraison }) =>
                     <div className="cmd-error-box"><p>Commande introuvable.</p></div>
                 ) : (
                     <>
+                        {isPending && (
+                            <div className="cmd-info-banner">
+                                <span className="cmd-info-banner-icon"><Icon d={Icons.alert} size={12} /></span>
+                                En attente de la décision du fournisseur (acceptation / refus).
+                            </div>
+                        )}
                         <div className="cmd-detail-sec">
                             <div className="cmd-detail-sec-title"><Icon d={Icons.orders} size={12} /> Informations commande</div>
                             <div className="cmd-detail-grid3">
@@ -790,17 +799,6 @@ const DetailAchatModal = ({ id, onClose, onValidate, onCancel, onLivraison }) =>
                         </div>
                         <div className="cmd-modal-footer">
                             <button className="cmd-btn cmd-btn-ghost" onClick={onClose}>Fermer</button>
-                            {canAct && (
-                                <>
-                                    <button className="cmd-btn cmd-btn-danger cmd-btn-sm" onClick={() => { onClose(); onCancel(cmd); }}>
-                                        <Icon d={Icons.ban} size={13} /> Annuler
-                                    </button>
-                                    <button className="cmd-btn cmd-btn-success cmd-btn-sm" onClick={() => { onClose(); onValidate(cmd); }}>
-                                        <Icon d={Icons.validate} size={13} /> Valider
-                                    </button>
-                                </>
-                            )}
-                            {/* ── Bouton livraison pour les commandes acceptées ── */}
                             {canLivrer && (
                                 <button
                                     className="cmd-btn cmd-btn-sm"
@@ -825,8 +823,7 @@ const CommandesAchatPanel = ({ notify }) => {
     const [search,       setSearch]       = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [viewId,       setViewId]       = useState(null);
-    const [confirm,      setConfirm]      = useState(null);   // { type: 'validate'|'cancel', order }
-    const [livraison,    setLivraison]    = useState(null);   // order en attente de statut livraison
+    const [livraison,    setLivraison]    = useState(null);
     const [actionLoad,   setActionLoad]   = useState(false);
 
     const fetchOrders = useCallback(async () => {
@@ -838,31 +835,6 @@ const CommandesAchatPanel = ({ notify }) => {
 
     useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-    // Accepter (avec date de livraison)
-    const handleValidate = async (dateLivraison) => {
-        setActionLoad(true);
-        try {
-            await API.post(`/commandes-achat/${confirm.order.id}/valider`, { date_livraison: dateLivraison });
-            notify('Commande acceptée avec succès.', 'success');
-            setConfirm(null); fetchOrders();
-        } catch (e) {
-            notify(e.response?.data?.message || 'Erreur lors de la validation.', 'error');
-        } finally { setActionLoad(false); }
-    };
-
-    // Refuser
-    const handleCancel = async () => {
-        setActionLoad(true);
-        try {
-            await API.post(`/commandes-achat/${confirm.order.id}/cancel`);
-            notify('Commande refusée.', 'success');
-            setConfirm(null); fetchOrders();
-        } catch (e) {
-            notify(e.response?.data?.message || "Erreur lors du refus.", 'error');
-        } finally { setActionLoad(false); }
-    };
-
-    // Livraison (livrée ou non)
     const handleLivraison = async (livree) => {
         setActionLoad(true);
         try {
@@ -891,15 +863,19 @@ const CommandesAchatPanel = ({ notify }) => {
     });
 
     const stats = [
-        { label:'Total',        value:orders.length,                                                                                                    cls:'blue',   sub:"commandes d'achat" },
-        { label:'En attente',   value:orders.filter(o => ['en attente','en_attente'].includes(normalizeStatus(o.statut))).length,                       cls:'orange', sub:'en cours'          },
-        { label:'Acceptées',    value:orders.filter(o => ['acceptée','acceptee'].includes(normalizeStatus(o.statut))).length,                           cls:'purple', sub:'à livrer'          },
-        { label:'Livrées',      value:orders.filter(o => ['livrée','livree'].includes(normalizeStatus(o.statut))).length,                              cls:'green',  sub:'reçues'            },
-        { label:'Refusées',     value:orders.filter(o => ['refusée','refusee'].includes(normalizeStatus(o.statut))).length,                            cls:'red',    sub:'annulées'          },
+        { label:'Total',      value:orders.length,                                                                                                  cls:'blue',   sub:"commandes d'achat" },
+        { label:'En attente', value:orders.filter(o => ['en attente','en_attente'].includes(normalizeStatus(o.statut))).length,                     cls:'orange', sub:'fournisseur'       },
+        { label:'Acceptées',  value:orders.filter(o => ['acceptée','acceptee'].includes(normalizeStatus(o.statut))).length,                         cls:'purple', sub:'à livrer'          },
+        { label:'Livrées',    value:orders.filter(o => ['livrée','livree'].includes(normalizeStatus(o.statut))).length,                            cls:'green',  sub:'reçues'            },
+        { label:'Refusées',   value:orders.filter(o => ['refusée','refusee'].includes(normalizeStatus(o.statut))).length,                          cls:'red',    sub:'annulées'          },
     ];
 
     return (
         <>
+            <div className="cmd-info-banner">
+                <span className="cmd-info-banner-icon"><Icon d={Icons.alert} size={12} /></span>
+                Les décisions d'acceptation et de refus sont gérées par le fournisseur. Vous pouvez consulter chaque commande et marquer la livraison une fois acceptée.
+            </div>
             <div className="cmd-stats">
                 {stats.map(s => (
                     <div key={s.label} className={`cmd-stat ${s.cls}`}>
@@ -909,7 +885,6 @@ const CommandesAchatPanel = ({ notify }) => {
                     </div>
                 ))}
             </div>
-
             <div className="cmd-toolbar">
                 <div className="cmd-toolbar-left">
                     <div className="cmd-search">
@@ -930,24 +905,28 @@ const CommandesAchatPanel = ({ notify }) => {
                     <button className="cmd-btn cmd-btn-ghost cmd-btn-sm" onClick={fetchOrders}><Icon d={Icons.refresh} size={14} /> Rafraîchir</button>
                 </div>
             </div>
-
             <div className="cmd-table-wrap">
                 <table className="cmd-table">
                     <thead>
                         <tr>
                             <th>Référence</th><th>Fournisseur</th><th>Admin</th><th>Type</th>
                             <th>Date</th><th>Livraison prévue</th><th>Total HT</th><th>Statut</th>
-                            <th style={{ width:130 }}>Actions</th>
+                            <th style={{ width:90 }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
                             <tr><td colSpan={9}><div className="cmd-spinner-wrap"><span className="cmd-spinner" /> Chargement...</div></td></tr>
                         ) : filtered.length === 0 ? (
-                            <tr><td colSpan={9}><div className="cmd-empty"><div className="cmd-empty-icon"><Icon d={Icons.purchase} size={40} /></div><p>Aucune commande d'achat trouvée</p><small>{search || statusFilter ? 'Essayez de modifier vos filtres' : "Les commandes d'achat apparaîtront ici"}</small></div></td></tr>
+                            <tr><td colSpan={9}>
+                                <div className="cmd-empty">
+                                    <div className="cmd-empty-icon"><Icon d={Icons.purchase} size={40} /></div>
+                                    <p>Aucune commande d'achat trouvée</p>
+                                    <small>{search || statusFilter ? 'Essayez de modifier vos filtres' : "Les commandes d'achat apparaîtront ici"}</small>
+                                </div>
+                            </td></tr>
                         ) : filtered.map(o => {
                             const status    = normalizeStatus(o.statut);
-                            const canAct    = ['en attente','en_attente'].includes(status);
                             const canLivrer = ['acceptée','acceptee'].includes(status);
                             return (
                                 <tr key={o.id} style={{ cursor:'pointer' }} onClick={() => setViewId(o.id)}>
@@ -970,19 +949,8 @@ const CommandesAchatPanel = ({ notify }) => {
                                     <td onClick={e => e.stopPropagation()}>
                                         <div className="cmd-actions">
                                             <button className="cmd-icon-btn cmd-ib-view" title="Voir" onClick={() => setViewId(o.id)}><Icon d={Icons.eye} size={13} /></button>
-                                            {canAct && (
-                                                <>
-                                                    <button className="cmd-icon-btn cmd-ib-success" title="Accepter" onClick={() => setConfirm({ type:'validate', order:o })}><Icon d={Icons.validate} size={13} /></button>
-                                                    <button className="cmd-icon-btn cmd-ib-danger"  title="Refuser"  onClick={() => setConfirm({ type:'cancel',   order:o })}><Icon d={Icons.ban}      size={13} /></button>
-                                                </>
-                                            )}
-                                            {/* ── Bouton livraison pour les commandes acceptées ── */}
                                             {canLivrer && (
-                                                <button
-                                                    className="cmd-icon-btn cmd-ib-truck"
-                                                    title="Statut livraison"
-                                                    onClick={() => setLivraison(o)}
-                                                >
+                                                <button className="cmd-icon-btn cmd-ib-truck" title="Statut livraison" onClick={() => setLivraison(o)}>
                                                     <Icon d={Icons.truck} size={13} />
                                                 </button>
                                             )}
@@ -994,32 +962,11 @@ const CommandesAchatPanel = ({ notify }) => {
                     </tbody>
                 </table>
             </div>
-
-            {/* Modals */}
             {viewId && (
                 <DetailAchatModal
                     id={viewId}
                     onClose={() => setViewId(null)}
-                    onValidate={o => { setViewId(null); setConfirm({ type:'validate', order:o }); }}
-                    onCancel={o   => { setViewId(null); setConfirm({ type:'cancel',   order:o }); }}
                     onLivraison={o => { setViewId(null); setLivraison(o); }}
-                />
-            )}
-            {confirm?.type === 'validate' && (
-                <ValiderAchatModal
-                    order={confirm.order}
-                    onClose={() => setConfirm(null)}
-                    onConfirm={handleValidate}
-                    loading={actionLoad}
-                />
-            )}
-            {confirm?.type === 'cancel' && (
-                <ConfirmModal
-                    type="cancel"
-                    order={confirm.order}
-                    onClose={() => setConfirm(null)}
-                    onConfirm={handleCancel}
-                    loading={actionLoad}
                 />
             )}
             {livraison && (

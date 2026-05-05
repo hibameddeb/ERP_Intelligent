@@ -146,6 +146,49 @@ const sendPasswordResetEmail = async (to, code) => {
   return transporter.sendMail(mailOptions);
 };
 
+// ── Paiement fournisseur via Konnect ─────────────────────────────────────────
+const sendPaymentLinkEmail = async (to, prenom, nom, numFacture, totalTtc, payUrl) => {
+  const mailOptions = {
+    from: '"Système ERP" <noreply@erp.tn>',
+    to,
+    subject: `💳 Paiement de votre facture ${numFacture}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;background:#f5f5f5;padding:32px;border-radius:14px;">
+        <div style="background:linear-gradient(135deg,#2B7574,#0E2931);border-radius:12px;padding:28px;text-align:center;margin-bottom:24px;">
+          <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Paiement de facture</h1>
+          <p style="color:rgba(255,255,255,0.6);margin:6px 0 0;font-size:13px;">ERP OrderFlow Pro</p>
+        </div>
+        <p style="color:#333;font-size:15px;margin-bottom:6px;">
+          Bonjour <strong>${prenom} ${nom}</strong>,
+        </p>
+        <p style="color:#666;font-size:14px;line-height:1.6;margin-bottom:20px;">
+          Une demande de paiement vous a été envoyée. Cliquez sur le bouton ci-dessous pour procéder au règlement sécurisé.
+        </p>
+        <div style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;margin-bottom:24px;">
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f5f5;">
+            <span style="color:#999;font-size:13px;">N° Facture</span>
+            <span style="color:#333;font-weight:700;font-size:13px;">${numFacture}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;">
+            <span style="color:#999;font-size:13px;">Montant TTC</span>
+            <span style="color:#2B7574;font-weight:800;font-size:18px;">${parseFloat(totalTtc).toFixed(3)} DT</span>
+          </div>
+        </div>
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${payUrl}"
+             style="background:linear-gradient(135deg,#2B7574,#12484C);color:#fff;padding:16px 40px;border-radius:12px;text-decoration:none;font-weight:700;font-size:15px;display:inline-block;box-shadow:0 4px 16px rgba(43,117,116,0.35);">
+            💳 Payer maintenant — ${parseFloat(totalTtc).toFixed(3)} DT
+          </a>
+        </div>
+        <p style="color:#aaa;font-size:11px;text-align:center;margin-top:20px;">
+          Ce lien est valable <strong>60 minutes</strong>. Paiement sécurisé par <strong>Konnect</strong> · Certifié PCI-DSS · Agréé BCT 🇹🇳
+        </p>
+      </div>
+    `,
+  };
+  return transporter.sendMail(mailOptions);
+};
+
 module.exports = {
   sendStatusEmail,
   sendAdminNotification,
@@ -154,4 +197,5 @@ module.exports = {
   sendActivationEmail,
   sendTwoFactorCodeEmail,
   sendPasswordResetEmail,
+  sendPaymentLinkEmail, 
 };

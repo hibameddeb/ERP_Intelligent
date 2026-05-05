@@ -7,40 +7,50 @@ import CommandesPage from './pages/Commandes';
 import CommercialDashboard from './pages/DashboardCommercial';
 import GestionFournisseurs from './pages/GestionFournisseurs';
 import DashboardFournisseur from './pages/DashboardFournisseur';
-import Factures from "./pages/Factures";
-import DashboardComptable from "./pages/Dashboardcomptable";
+import Factures from './pages/Factures';
+import DashboardComptable from './pages/Dashboardcomptable';
+// ⬅️ AJOUT
+import Chat from './pages/Chat';
+
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/adhesion" element={<Adhesion />} />
-        <Route path="/login" element={<Auth />} />
+        <Route path="/login"    element={<Auth />} />
         <Route path="/activate" element={<Auth />} />
-        <Route path="/" element={<Auth />} />
+        <Route path="/"         element={<Auth />} />
+
         <Route path="/dashboard/admin" element={
-        <ProtectedRoute allowedRoles={['ADMIN']}>
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <AdminDashboard />
-        </ProtectedRoute>
-    } />
-    <Route path="/dashboard/commercial" element={
-    <ProtectedRoute allowedRoles={['COMMERCIAL']}>
-        <CommercialDashboard />
-    </ProtectedRoute>
-} />    <Route path="/commandes" element={<CommandesPage />} />
-    <Route path="/dashboard/fournisseur" element={
-        <ProtectedRoute allowedRoles={['FOURNISSEUR']}>
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard/commercial" element={
+          <ProtectedRoute allowedRoles={['COMMERCIAL']}>
+            <CommercialDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/commandes" element={<CommandesPage />} />
+        <Route path="/dashboard/fournisseur" element={
+          <ProtectedRoute allowedRoles={['FOURNISSEUR']}>
             <DashboardFournisseur />
-        </ProtectedRoute>
-    } />
-    <Route path="/gestion-fournisseurs" element={
-        <ProtectedRoute allowedRoles={['ADMIN']}>
+          </ProtectedRoute>
+        } />
+        <Route path="/gestion-fournisseurs" element={
+          <ProtectedRoute allowedRoles={['ADMIN']}>
             <GestionFournisseurs />
-        </ProtectedRoute>
-    } />
-    <Route path="/dashboard/comptable" element={<DashboardComptable />} />
-    <Route path="/factures" element={<Factures />} />
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard/comptable" element={<DashboardComptable />} />
+        <Route path="/factures" element={<Factures />} />
+
+        <Route path="/messages" element={
+          <ProtectedRoute allowedRoles={['CLIENT', 'COMMERCIAL']}>
+            <Chat />
+          </ProtectedRoute>
+        } />
       </Routes>
-    
     </Router>
   );
 }

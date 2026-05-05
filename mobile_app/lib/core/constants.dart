@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String baseUrl = 'http://localhost:5000/api'; // For Web / Desktop
-  // static const String baseUrl = 'http://10.0.2.2:5000/api'; // For Android Emulator
+  static const String apiBaseUrl = baseUrl;
+  //static const String baseUrl = 'http://192.168.1.144:5000/api'; // For Physical Device (Wi-Fi IP)
 
   static const Color primaryColor = Color(0xFF2563EB); // Vibrant Blue
   static const Color secondaryColor = Color(0xFF10B981); // Emerald Green

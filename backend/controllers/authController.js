@@ -372,7 +372,6 @@ exports.updateProfile = async (req, res) => {
       );
     }
 
-    // ✅ Return updated fields so frontend can refresh state immediately (no re-login needed)
     const updatedUser = {
       nom: nom.trim(),
       prenom: prenom.trim(),

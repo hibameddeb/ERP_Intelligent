@@ -16,7 +16,10 @@ router.post("/", verifyToken, isAdmin, commandeAchatController.createCommandeAch
 router.get("/:id", verifyToken, isAdminOrFournisseur, commandeAchatController.getCommandeAchatById);
 router.get("/fournisseur/:id_fournisseur", verifyToken, isAdminOrFournisseur, commandeAchatController.getCommandesByFournisseur);
 
-router.post("/:id/valider",   verifyToken, isAdminOrFournisseur, commandeAchatController.validerCommandeAchat);
-router.post("/:id/cancel",    verifyToken, isAdminOrFournisseur, commandeAchatController.cancelCommandeAchat);
-router.patch("/:id/livraison", verifyToken, isAdmin,             commandeAchatController.marquerLivraison); 
+
+router.post("/:id/valider",   verifyToken, isFournisseur, commandeAchatController.validerCommandeAchat);
+router.post("/:id/cancel",    verifyToken, isFournisseur, commandeAchatController.cancelCommandeAchat);
+
+router.patch("/:id/livraison", verifyToken, isAdmin,      commandeAchatController.marquerLivraison);
+
 module.exports = router;

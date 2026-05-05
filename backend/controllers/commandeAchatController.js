@@ -446,7 +446,7 @@ const marquerLivraison = async (req, res) => {
          (identifiant_global_unique, id_commande_achat, id_fournisseur, id_societe,
           num_facture, trimestre, statut, total_ht, tva, fodec, total_ttc,
           date_creation, date_reception, date_echeance)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'reçue', $6, $7, $8, $9, NOW(), NOW(), $10)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'non_payée', $6, $7, $8, $9, NOW(), NOW(), $10)
        RETURNING *`,
       [id, commande.id_fournisseur, commande.id_societe, num_facture, trimestre,
        total_ht.toFixed(2), total_tva.toFixed(2), total_fodec.toFixed(2), total_ttc.toFixed(2), dateEcheance]
@@ -462,7 +462,24 @@ const marquerLivraison = async (req, res) => {
       );
     }
 
-    // ── Vérifier stock faible pour chaque produit de la commande ──
+    // ── AUTO-RESTOCK : si le produit est déjà au catalogue (produit_entreprise),
+    //    on ajoute automatiquement la quantité livrée à son stock.
+    //    Si le produit n'est pas encore importé, on ne fait rien — l'admin
+    //    l'importera manuellement depuis l'interface "Importer depuis facture".
+    for (const row of detailsRes.rows) {
+      const qte = parseInt(row.quantite) || 0;
+      if (qte <= 0) continue;
+      await db.query(
+        `UPDATE produit_entreprise
+            SET quantite   = quantite + $1,
+                updated_at = NOW()
+          WHERE id_produit_f = $2`,
+        [qte, row.id_produit_fournisseur]
+      );
+    }
+
+    // ── Vérifier stock faible pour chaque produit de la commande
+    //    (après le restock, donc on voit le stock à jour) ──
     for (const row of detailsRes.rows) {
       const peRes = await db.query(
         `SELECT id, nom_commercial, quantite FROM produit_entreprise WHERE id_produit_f = $1`,

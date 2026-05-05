@@ -20,13 +20,7 @@ const logActivity = async (client, { id_utilisateur, action, description }) => {
   );
 };
 
-/**
- * POST /api/factures/:id/envoyer-ttn
- * 1. Génère le XML TEIF
- * 2. Signe avec clé USB TunTrust
- * 3. Envoie à TTN via saveEfact
- * 4. Sauvegarde idSaveEfact + generatedRef en DB
- */
+
 const envoyerATTN = async (req, res) => {
   const { id } = req.params;
   const db     = await pool.connect();

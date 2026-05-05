@@ -1,17 +1,8 @@
 const pool = require('../config/db');
 
-// ── Icons / labels per type ───────────────────────────────────────────────────
-const TYPE_CONFIG = {
-  COMMANDE_ACCEPTEE:  { label: 'Commande acceptée',   color: 'success' },
-  COMMANDE_REFUSEE:   { label: 'Commande refusée',    color: 'danger'  },
-  COMMANDE_NON_LIVREE:{ label: 'Non livrée',          color: 'danger'  },
-  FACTURE_CREEE:      { label: 'Nouvelle facture',     color: 'info'    },
-  STOCK_FAIBLE:       { label: 'Stock faible',         color: 'warning' },
-  STOCK_RUPTURE:      { label: 'Rupture de stock',     color: 'danger'  },
-};
-
 // ── GET ALL ───────────────────────────────────────────────────────────────────
 exports.getNotifications = async (req, res) => {
+  // Étape 1 : on tente la requête complète
   try {
     const result = await pool.query(`
       SELECT
@@ -28,9 +19,26 @@ exports.getNotifications = async (req, res) => {
       ORDER BY n.created_at DESC
       LIMIT 80
     `);
-    res.status(200).json(result.rows);
+    return res.status(200).json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // ⚠️  On log l'erreur exacte pour diagnostic
+    console.error('[NOTIF] Full query failed:', err.message);
+    console.error('[NOTIF] Detail:', err.detail || '(no detail)');
+    console.error('[NOTIF] Hint:',   err.hint   || '(no hint)');
+  }
+
+  // Étape 2 : fallback sans jointures (au cas où une table/colonne manque)
+  try {
+    console.warn('[NOTIF] Falling back to plain query (no joins)');
+    const result = await pool.query(`
+      SELECT * FROM notification
+      ORDER BY created_at DESC
+      LIMIT 80
+    `);
+    return res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('[NOTIF] Plain query also failed:', err.message);
+    return res.status(500).json({ error: err.message });
   }
 };
 
@@ -42,6 +50,7 @@ exports.getUnreadCount = async (req, res) => {
     );
     res.status(200).json({ count: parseInt(result.rows[0].count) });
   } catch (err) {
+    console.error('[NOTIF] getUnreadCount failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -53,6 +62,7 @@ exports.markAsRead = async (req, res) => {
     await pool.query(`UPDATE notification SET is_read = true WHERE id = $1`, [id]);
     res.status(200).json({ message: "Marquée comme lue." });
   } catch (err) {
+    console.error('[NOTIF] markAsRead failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -63,6 +73,7 @@ exports.markAllAsRead = async (req, res) => {
     await pool.query(`UPDATE notification SET is_read = true`);
     res.status(200).json({ message: "Toutes marquées comme lues." });
   } catch (err) {
+    console.error('[NOTIF] markAllAsRead failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -74,6 +85,7 @@ exports.deleteNotification = async (req, res) => {
     await pool.query(`DELETE FROM notification WHERE id = $1`, [id]);
     res.status(200).json({ message: "Supprimée." });
   } catch (err) {
+    console.error('[NOTIF] deleteNotification failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 };

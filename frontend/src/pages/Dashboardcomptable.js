@@ -6,7 +6,7 @@ const fmt = (n) => parseFloat(n || 0).toFixed(3);
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("fr-TN") : "—";
 const fullName = (...parts) => parts.filter(Boolean).join(" ") || "—";
 const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("token")}` });
-const jsonHeaders = () => ({ ...getHeaders(), "Content-Type": "application/json" });
+
 
 const STATUT_MAP = {
   brouillon:  { bg: "#F1EFE8", color: "#5F5E5A", label: "Brouillon" },

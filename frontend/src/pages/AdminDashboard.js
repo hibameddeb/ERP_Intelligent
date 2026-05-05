@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import API from "../services/api";
 import DemandesAdhesion from "./DemandesAdhesion";
 import GestionProduits from "./GestionProduits";
@@ -8,7 +8,6 @@ import CommandesPage from "./Commandes";
 import LogActivite from "./LogActivite";
 import NotificationBell from "./NotificationBell";
 import CatalogueAchat from "./Catalogueachat";
-import Factures from "./Factures";
 import SupportPage from "./Reclamations";
 
 // ─── Icon ─────────────────────────────────────────────────────────────────────
@@ -46,6 +45,7 @@ const Icons = {
   briefcase:    "M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM16 3H8L6 7h12l-2-4z",
   arrowLeft:    "M19 12H5M12 19l-7-7 7-7",
   reclamations: "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-5 5v-5z",
+  creditCard:   "M1 4h22v16H1zM1 10h22",
 };
 
 // ─── Design System CSS ────────────────────────────────────────────────────────
@@ -121,7 +121,6 @@ body {
   font-size: 11px; color: var(--muted); margin-top: 2px;
   letter-spacing: 0.05em; text-transform: uppercase; font-weight: 500;
 }
-
 .erp-nav { padding: 12px 10px; flex: 1; overflow-y: auto; }
 .erp-nav-label {
   font-size: 10px; font-weight: 600; color: var(--muted);
@@ -145,7 +144,6 @@ body {
 .erp-nav-btn.active svg { opacity: 1; }
 .erp-nav-btn.danger { color: var(--rose); }
 .erp-nav-btn.danger:hover { background: var(--rose-dim); }
-
 .erp-sidebar-footer { border-top: 1px solid var(--border); padding: 12px 10px; }
 .erp-user-chip {
   display: flex; align-items: center; gap: 10px;
@@ -197,7 +195,6 @@ body {
   border: 1px solid var(--border); background: var(--surface-2); cursor: default;
 }
 .erp-topbar-username { font-size: 13px; font-weight: 500; color: var(--text-2); }
-
 .erp-content { flex: 1; overflow-y: auto; padding: 28px; }
 
 /* ── Stats grid ── */
@@ -284,6 +281,15 @@ body {
 .erp-btn-danger:disabled { opacity: 0.55; cursor: not-allowed; }
 .erp-btn-success { background: var(--teal-dim); color: var(--teal); border-color: rgba(18,72,76,0.25); }
 .erp-btn-success:hover { background: rgba(18,72,76,0.18); }
+.erp-btn-pay {
+  background: var(--blue); color: #fff; border-color: var(--blue);
+  height: 30px; padding: 0 12px; font-size: 12px; border-radius: 8px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'DM Sans', sans-serif; font-weight: 500;
+  cursor: pointer; border: 1px solid var(--blue); transition: all 0.15s;
+}
+.erp-btn-pay:hover { background: var(--blue-hover); }
+.erp-btn-pay:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* ── Table ── */
 .erp-table-container {
@@ -349,6 +355,8 @@ body {
 .erp-act-off:hover   { background: rgba(134,18,17,0.2); }
 .erp-act-view  { background: var(--violet-dim); color: var(--violet); }
 .erp-act-view:hover  { background: rgba(14,41,49,0.2); }
+.erp-act-pay   { background: var(--blue-dim);   color: var(--blue); }
+.erp-act-pay:hover   { background: rgba(43,117,116,0.2); }
 
 /* ── Empty state ── */
 .erp-empty {
@@ -548,6 +556,77 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Payment Modal ── */
+.pay-overlay {
+  position: fixed; inset: 0; background: rgba(14,41,49,0.60);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000; animation: erpFadeIn 0.15s ease;
+}
+.pay-modal {
+  background: var(--surface); border-radius: var(--r-xl);
+  width: 560px; max-width: 96vw; max-height: 92vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border-2);
+  animation: erpSlideUp 0.22s cubic-bezier(0.16,1,0.3,1);
+}
+.pay-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2); flex-shrink: 0;
+}
+.pay-header-title { font-family: 'Plus Jakarta Sans',sans-serif; font-weight: 700; font-size: 15px; color: var(--text); }
+.pay-header-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.pay-close {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 6px;
+  transition: color 0.15s;
+}
+.pay-close:hover { color: var(--text); }
+.pay-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.pay-iframe { flex: 1; border: none; width: 100%; height: 480px; }
+.pay-center {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px; padding: 40px 24px; text-align: center;
+}
+.pay-spinner {
+  width: 44px; height: 44px; border: 3px solid var(--border);
+  border-top-color: var(--blue); border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+.pay-success-icon {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: var(--teal-dim); color: var(--teal);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 700;
+  border: 2px solid rgba(18,72,76,0.2);
+}
+.pay-error-icon {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: var(--rose-dim); color: var(--rose);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 700;
+  border: 2px solid rgba(134,18,17,0.2);
+}
+.pay-hint { font-size: 13px; color: var(--muted); }
+.pay-polling-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 16px; background: var(--surface-2);
+  border-top: 1px solid var(--border); font-size: 12px; color: var(--muted);
+  flex-shrink: 0;
+}
+.pay-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--blue);
+  animation: payPulse 1.4s ease-in-out infinite; flex-shrink: 0;
+}
+@keyframes payPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+@keyframes payBar   { from{width:0} to{width:100%} }
+.pay-footer {
+  padding: 9px 20px; font-size: 11px; color: var(--muted);
+  text-align: center; border-top: 1px solid var(--border);
+  background: var(--surface-2); flex-shrink: 0;
+}
+
 /* ── Responsive ── */
 @media (max-width: 1100px) { .erp-stats-grid { grid-template-columns: repeat(2,1fr); } }
 @media (max-width: 768px)  { .erp-sidebar { display: none; } .erp-content { padding: 16px; } }
@@ -562,7 +641,16 @@ const roleBadge = (role) => {
 const initials = (u) =>
   `${u.prenom?.[0] || ""}${u.nom?.[0] || ""}`.toUpperCase();
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
+const statutBadge = (statut) => {
+  const map = {
+    non_payée: "amber",
+    payée:     "teal",
+    annulée:   "rose",
+  };
+  const label = statut === "non_payée" ? "non payée" : statut;
+  return <span className={`erp-badge erp-badge-${map[statut] || "muted"}`}>{label}</span>;
+};
+
 const Toast = ({ msg, type, onDone }) => {
   useEffect(() => {
     const t = setTimeout(onDone, 3500);
@@ -575,6 +663,724 @@ const Toast = ({ msg, type, onDone }) => {
       </div>
       {msg}
     </div>
+  );
+};
+
+const PaymentModal = ({ facture, onPaid, onClose }) => {
+  const [step, setStep]               = useState("choose");
+  const [activeMethod, setActiveMethod] = useState(null);
+  const [sentEmail, setSentEmail]     = useState("");
+  const [errMsg, setErrMsg]           = useState("");
+  const [showBar, setShowBar]         = useState(false);
+  const pollingRef                    = useRef(null);
+
+  useEffect(() => () => clearInterval(pollingRef.current), []);
+
+  const handleKonnect = async () => {
+    setActiveMethod("konnect");
+    setStep("sending");
+    try {
+      const res = await API.post(`/payment/facture/${facture.id}/initier`);
+      setSentEmail(res.data.email || facture?.fournisseur_email || "");
+      setStep("email_sent");
+      pollingRef.current = setInterval(async () => {
+        try {
+          const r = await API.get(`/payment/facture/${facture.id}/verifier`);
+          if (r.data.statut === "payée") {
+            clearInterval(pollingRef.current);
+            setStep("paid");
+            setTimeout(() => { onPaid?.(); onClose?.(); }, 2500);
+          }
+        } catch (_) {}
+      }, 5000);
+    } catch (err) {
+      setErrMsg(err.response?.data?.message || "Erreur lors de l'envoi du lien.");
+      setStep("error");
+    }
+  };
+
+  const lancerSimulation = async () => {
+    setStep("processing");
+    setShowBar(true);
+    try {
+      await API.post(`/payment/facture/${facture.id}/simuler`);
+      setTimeout(() => {
+        setStep("paid");
+        setTimeout(() => { onPaid?.(); onClose?.(); }, 2500);
+      }, 2200);
+    } catch (err) {
+      setErrMsg(err.response?.data?.message || "Erreur simulation.");
+      setStep("error");
+    }
+  };
+
+  const handleRetry = () => {
+    clearInterval(pollingRef.current);
+    setStep("choose"); setActiveMethod(null); setSentEmail(""); setErrMsg(""); setShowBar(false);
+  };
+
+  const handleClose = () => { clearInterval(pollingRef.current); onClose?.(); };
+
+  const numFacture = facture?.num_facture;
+  const montant    = facture?.total_ttc;
+
+  return (
+    <div className="pay-overlay" onClick={(e) => e.target === e.currentTarget && handleClose()}>
+      <div className="pay-modal">
+        <div className="pay-header">
+          <div>
+            <div className="pay-header-title">💳 Paiement sécurisé</div>
+            <div className="pay-header-sub">
+              Facture {numFacture} — {parseFloat(montant || 0).toFixed(3)} DT
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{
+              display:"inline-flex", alignItems:"center", gap:5, padding:"3px 10px",
+              borderRadius:99, background:"var(--blue-dim)", color:"var(--blue)",
+              fontSize:11, fontWeight:600, border:"1px solid rgba(43,117,116,0.2)"
+            }}>
+              <span style={{ width:6, height:6, borderRadius:"50%", background:"var(--blue)", display:"inline-block" }} />
+              Sandbox
+            </span>
+            <button className="pay-close" onClick={handleClose}>✕</button>
+          </div>
+        </div>
+
+        <div className="pay-body">
+          {step === "choose" && (
+            <div style={{ padding:28, display:"flex", flexDirection:"column", gap:16, flex:1 }}>
+              <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:700, fontSize:15, color:"var(--text)", marginBottom:4 }}>
+                Choisir une méthode de paiement
+              </div>
+              <button onClick={handleKonnect} style={{
+                display:"flex", alignItems:"flex-start", gap:14, padding:18,
+                borderRadius:14, border:"2px solid var(--border)", background:"var(--surface-2)",
+                cursor:"pointer", textAlign:"left", transition:"all 0.18s", width:"100%"
+              }}
+              onMouseOver={e=>e.currentTarget.style.borderColor="var(--blue)"}
+              onMouseOut={e=>e.currentTarget.style.borderColor="var(--border)"}
+              >
+                <div style={{
+                  width:46, height:46, borderRadius:12, background:"var(--blue-dim)",
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0
+                }}>💳</div>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:14, color:"var(--text)", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                    Konnect Gateway
+                  </div>
+                  <div style={{ fontSize:12, color:"var(--muted)", marginTop:3, lineHeight:1.5 }}>
+                    Génère un lien de paiement sécurisé<br/>envoyé par email au fournisseur
+                  </div>
+                  <span style={{
+                    display:"inline-block", marginTop:8, padding:"2px 8px", borderRadius:99,
+                    fontSize:10, fontWeight:700, background:"var(--blue-dim)", color:"var(--blue)",
+                    border:"1px solid rgba(43,117,116,0.2)"
+                  }}>Sandbox</span>
+                </div>
+              </button>
+              <button onClick={() => { setActiveMethod("demo"); setStep("demo"); }} style={{
+                display:"flex", alignItems:"flex-start", gap:14, padding:18,
+                borderRadius:14, border:"2px solid var(--border)", background:"var(--surface-2)",
+                cursor:"pointer", textAlign:"left", transition:"all 0.18s", width:"100%"
+              }}
+              onMouseOver={e=>e.currentTarget.style.borderColor="var(--amber)"}
+              onMouseOut={e=>e.currentTarget.style.borderColor="var(--border)"}
+              >
+                <div style={{
+                  width:46, height:46, borderRadius:12, background:"var(--amber-dim)",
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0
+                }}>🧪</div>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:14, color:"var(--text)", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                    Simulation démo
+                  </div>
+                  <div style={{ fontSize:12, color:"var(--muted)", marginTop:3, lineHeight:1.5 }}>
+                    Marque la facture payée directement<br/>pour la démonstration PFE
+                  </div>
+                  <span style={{
+                    display:"inline-block", marginTop:8, padding:"2px 8px", borderRadius:99,
+                    fontSize:10, fontWeight:700, background:"var(--amber-dim)", color:"var(--amber)",
+                    border:"1px solid rgba(160,107,26,0.2)"
+                  }}>Démo PFE</span>
+                </div>
+              </button>
+            </div>
+          )}
+
+          {step === "sending" && (
+            <div className="pay-center">
+              <div className="pay-spinner" />
+              <p style={{ fontWeight:600, fontSize:15, color:"var(--text)" }}>Génération du lien…</p>
+              <p className="pay-hint">Préparation du lien de paiement et envoi par email au fournisseur.</p>
+            </div>
+          )}
+
+          {step === "email_sent" && (
+            <div className="pay-center">
+              <div style={{
+                width:72, height:72, borderRadius:"50%",
+                background:"var(--blue-dim)", border:"2px solid rgba(43,117,116,0.2)",
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:32
+              }}>✉️</div>
+              <p style={{ fontWeight:700, fontSize:17, color:"var(--text)", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                Lien de paiement envoyé !
+              </p>
+              <p className="pay-hint">Un email a été envoyé au fournisseur :</p>
+              <div style={{
+                background:"var(--surface-2)", border:"1px solid var(--border)", borderRadius:8,
+                padding:"8px 16px", fontFamily:"'JetBrains Mono',monospace", fontSize:12,
+                color:"var(--blue)", fontWeight:600
+              }}>
+                📧 {sentEmail}
+              </div>
+              <p className="pay-hint" style={{ maxWidth:320, textAlign:"center", lineHeight:1.7 }}>
+                Le fournisseur recevra un email avec un lien sécurisé pour saisir
+                ses coordonnées bancaires et encaisser le paiement.<br/>
+                <strong>Ce lien est valable 60 minutes.</strong>
+              </p>
+              <div className="pay-polling-bar" style={{ borderRadius:10, border:"1px solid var(--border)", marginTop:4 }}>
+                <div className="pay-dot" />
+                En attente du paiement par le fournisseur…
+                <button onClick={handleRetry} style={{
+                  marginLeft:"auto", background:"none", border:"none",
+                  color:"var(--muted)", fontSize:12, cursor:"pointer"
+                }}>Annuler</button>
+              </div>
+            </div>
+          )}
+
+          {step === "demo" && (
+            <div className="pay-center">
+              <div style={{
+                width:"100%", maxWidth:400, background:"var(--surface-2)",
+                border:"1px solid var(--border)", borderRadius:16, overflow:"hidden"
+              }}>
+                <div style={{
+                  padding:"20px 24px", background:"linear-gradient(135deg,#2B7574,#0E2931)",
+                  textAlign:"center"
+                }}>
+                  <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:800, fontSize:16, color:"#fff" }}>
+                    Simulation de paiement
+                  </div>
+                  <div style={{ fontSize:12, color:"rgba(255,255,255,0.5)", marginTop:4 }}>Mode démonstration PFE</div>
+                </div>
+                <div style={{ padding:24 }}>
+                  <div style={{
+                    background:"var(--surface-3)", border:"1px solid var(--border)",
+                    borderRadius:10, padding:18, textAlign:"center", marginBottom:20
+                  }}>
+                    <div style={{ fontSize:11, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:6 }}>
+                      Montant à simuler
+                    </div>
+                    <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:34, fontWeight:800, color:"var(--text)" }}>
+                      {parseFloat(montant || 0).toFixed(3)} <span style={{ fontSize:16, color:"var(--muted)" }}>DT</span>
+                    </div>
+                  </div>
+                  <div style={{
+                    display:"flex", gap:10, background:"var(--amber-dim)", border:"1px solid rgba(160,107,26,0.2)",
+                    borderRadius:10, padding:"10px 14px", marginBottom:20, fontSize:12, color:"var(--amber)", lineHeight:1.5
+                  }}>
+                    <span style={{ flexShrink:0, fontSize:16 }}>⚠️</span>
+                    <span>Mode démonstration — aucun vrai paiement. La facture <strong>{numFacture}</strong> sera marquée <strong>payée</strong> en base de données.</span>
+                  </div>
+                  <button onClick={lancerSimulation} style={{
+                    width:"100%", padding:15, borderRadius:12,
+                    background:"linear-gradient(135deg,#2B7574,#12484C)",
+                    color:"#fff", border:"none", fontFamily:"'Plus Jakarta Sans',sans-serif",
+                    fontWeight:700, fontSize:15, cursor:"pointer", display:"flex",
+                    alignItems:"center", justifyContent:"center", gap:8
+                  }}>
+                    <Icon d={Icons.check} size={16} /> Confirmer le paiement simulé
+                  </button>
+                </div>
+              </div>
+              <button onClick={handleRetry} style={{
+                background:"none", border:"none", color:"var(--muted)",
+                fontSize:12, cursor:"pointer", marginTop:4
+              }}>← Changer de méthode</button>
+            </div>
+          )}
+
+          {step === "processing" && (
+            <div className="pay-center">
+              <div className="pay-spinner" />
+              <p style={{ fontWeight:600, fontSize:15, color:"var(--text)" }}>Traitement en cours…</p>
+              <p className="pay-hint">Simulation du paiement de <strong>{parseFloat(montant || 0).toFixed(3)} DT</strong></p>
+              {showBar && (
+                <div style={{ width:240, height:4, background:"var(--border)", borderRadius:99, overflow:"hidden" }}>
+                  <div style={{
+                    height:"100%", background:"linear-gradient(90deg,var(--blue),#4ade80)",
+                    borderRadius:99, animation:"payBar 2.2s cubic-bezier(0.4,0,0.2,1) forwards"
+                  }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === "paid" && (
+            <div className="pay-center">
+              <div className="pay-success-icon">✓</div>
+              <p style={{ fontWeight:700, fontSize:17, color:"var(--teal)", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                Paiement confirmé !
+              </p>
+              <p className="pay-hint">La facture <strong>{numFacture}</strong> est maintenant réglée.</p>
+              <div style={{
+                padding:"10px 20px", borderRadius:10, fontSize:13, fontWeight:700,
+                background:"var(--teal-dim)", color:"var(--teal)", border:"1px solid rgba(18,72,76,0.2)"
+              }}>
+                ✓ {parseFloat(montant || 0).toFixed(3)} DT réglés avec succès
+              </div>
+            </div>
+          )}
+
+          {step === "error" && (
+            <div className="pay-center">
+              <div className="pay-error-icon">✕</div>
+              <p style={{ fontWeight:700, fontSize:15, color:"var(--rose)" }}>Erreur</p>
+              <p className="pay-hint">{errMsg}</p>
+              <button className="erp-btn erp-btn-primary" onClick={handleRetry} style={{ marginTop:8 }}>
+                Réessayer
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="pay-footer">
+          🔒 SSL sécurisé · 🏦 Powered by <strong>Konnect</strong> · 🇹🇳 Agréé BCT · ⚠️ Mode Sandbox
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── FacturesAchatPage ────────────────────────────────────────────────────────
+const FacturesAchatPage = ({ showToast }) => {
+  const [factures, setFactures]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState("");
+  const [statutFilter, setStatutFilter] = useState("");
+  const [payModal, setPayModal]   = useState(null);
+
+  const fetchFactures = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await API.get("/factures-achat");
+      setFactures(res.data?.data || []);
+    } catch {
+      showToast("Erreur chargement factures.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => { fetchFactures(); }, [fetchFactures]);
+
+  const filtered = factures.filter((f) => {
+    const q = search.toLowerCase();
+    const matchSearch = !q ||
+      f.num_facture?.toLowerCase().includes(q) ||
+      f.fournisseur_nom?.toLowerCase().includes(q) ||
+      f.fournisseur_prenom?.toLowerCase().includes(q);
+    const matchStatut = !statutFilter || f.statut === statutFilter;
+    return matchSearch && matchStatut;
+  });
+
+  const stats = [
+    { label: "Total",     value: factures.length,                                          color: "var(--blue)",   dim: "var(--blue-dim)",   icon: Icons.demand,     sub: "factures achat" },
+    { label: "Non payées",value: factures.filter((f) => f.statut === "non_payée").length,  color: "var(--amber)",  dim: "var(--amber-dim)",  icon: Icons.warning,    sub: "impayées" },
+    { label: "Payées",    value: factures.filter((f) => f.statut === "payée").length,      color: "var(--teal)",   dim: "var(--teal-dim)",   icon: Icons.check,      sub: "réglées" },
+    { label: "Annulées",  value: factures.filter((f) => f.statut === "annulée").length,    color: "var(--rose)",   dim: "var(--rose-dim)",   icon: Icons.close,      sub: "annulées" },
+  ];
+
+  return (
+    <>
+      <div className="erp-stats-grid">
+        {stats.map((s) => (
+          <div key={s.label} className="erp-stat-card">
+            <div className="erp-stat-icon" style={{ background: s.dim, color: s.color }}>
+              <Icon d={s.icon} size={16} />
+            </div>
+            <div className="erp-stat-label">{s.label}</div>
+            <div className="erp-stat-value" style={{ color: s.color }}>{s.value}</div>
+            <div className="erp-stat-sub">{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="erp-toolbar">
+        <div className="erp-toolbar-left">
+          <span className="erp-section-title">
+            Factures Achat <span className="erp-section-count">({filtered.length})</span>
+          </span>
+        </div>
+        <div className="erp-toolbar-right">
+          <div className="erp-search">
+            <Icon d={Icons.search} size={14} />
+            <input
+              placeholder="Rechercher..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select
+            className="erp-select"
+            value={statutFilter}
+            onChange={(e) => setStatutFilter(e.target.value)}
+          >
+            <option value="">Tous les statuts</option>
+            <option value="non_payée">Non payée</option>
+            <option value="payée">Payée</option>
+            <option value="annulée">Annulée</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="erp-table-container">
+        <table className="erp-table">
+          <thead>
+            <tr>
+              <th>N° Facture</th>
+              <th>Fournisseur</th>
+              <th>Total HT</th>
+              <th>Total TTC</th>
+              <th>Statut</th>
+              <th>Date création</th>
+              <th>Date échéance</th>
+              <th style={{ width: 130 }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={8}>
+                  <div className="erp-empty">
+                    <span className="erp-spin" style={{ width: 24, height: 24 }} />
+                  </div>
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={8}>
+                  <div className="erp-empty">
+                    <div className="erp-empty-icon">
+                      <Icon d={Icons.demand} size={22} />
+                    </div>
+                    <p>Aucune facture trouvée</p>
+                  </div>
+                </td>
+              </tr>
+            ) : filtered.map((f) => (
+              <tr key={f.id}>
+                <td>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: "var(--blue)" }}>
+                    {f.num_facture}
+                  </span>
+                </td>
+                <td>
+                  <div style={{ fontWeight: 500, color: "var(--text)" }}>
+                    {f.fournisseur_prenom} {f.fournisseur_nom}
+                  </div>
+                  {f.fournisseur_societe && (
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{f.fournisseur_societe}</div>
+                  )}
+                </td>
+                <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
+                  {parseFloat(f.total_ht || 0).toFixed(3)} DT
+                </td>
+                <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600 }}>
+                  {parseFloat(f.total_ttc || 0).toFixed(3)} DT
+                </td>
+                <td>{statutBadge(f.statut)}</td>
+                <td style={{ fontSize: 12, color: "var(--text-2)" }}>
+                  {f.date_creation ? new Date(f.date_creation).toLocaleDateString("fr-FR") : "—"}
+                </td>
+                <td style={{ fontSize: 12, color: "var(--text-2)" }}>
+                  {f.date_echeance ? new Date(f.date_echeance).toLocaleDateString("fr-FR") : "—"}
+                </td>
+                <td>
+                  <div className="erp-actions">
+                    {f.statut === "non_payée" && (
+                      <button
+                        className="erp-act-btn erp-act-pay"
+                        title="Payer cette facture"
+                        onClick={() => setPayModal(f)}
+                      >
+                        <Icon d={Icons.creditCard} size={13} />
+                      </button>
+                    )}
+                    {f.statut === "payée" && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, color: "var(--teal)",
+                        background: "var(--teal-dim)", padding: "3px 8px",
+                        borderRadius: 6, border: "1px solid rgba(18,72,76,0.2)",
+                      }}>
+                        ✓ Payée
+                      </span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {payModal && (
+        <PaymentModal
+          facture={payModal}
+          onPaid={() => {
+            showToast(`Facture ${payModal.num_facture} payée avec succès !`, "success");
+            fetchFactures();
+          }}
+          onClose={() => setPayModal(null)}
+        />
+      )}
+    </>
+  );
+};
+
+// ─── FacturesVentePage ────────────────────────────────────────────────────────
+const FacturesVentePage = ({ showToast }) => {
+  const [factures, setFactures]               = useState([]);
+  const [loading, setLoading]                 = useState(true);
+  const [search, setSearch]                   = useState("");
+  const [statutFilter, setStatutFilter]       = useState("");
+  const [commercialFilter, setCommercialFilter] = useState("");
+  const [busyId, setBusyId]                   = useState(null);
+
+  // ── Deduplicated, sorted list of commerciaux from loaded factures ──
+  const commerciaux = useMemo(() => {
+    const seen = new Set();
+    return factures
+      .filter((f) => {
+        const name = `${f.commercial_prenom || ""} ${f.commercial_nom || ""}`.trim();
+        if (!name || seen.has(name)) return false;
+        seen.add(name);
+        return true;
+      })
+      .map((f) => ({
+        key:   `${f.commercial_prenom || ""}_${f.commercial_nom || ""}`,
+        label: `${f.commercial_prenom || ""} ${f.commercial_nom || ""}`.trim(),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [factures]);
+
+  const fetchFactures = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await API.get("/factures");
+      setFactures(res.data?.data || []);
+    } catch {
+      showToast("Erreur chargement factures vente.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => { fetchFactures(); }, [fetchFactures]);
+
+  const filtered = factures.filter((f) => {
+    const q = search.toLowerCase();
+    const matchSearch = !q ||
+      f.num_facture?.toLowerCase().includes(q) ||
+      f.client_nom?.toLowerCase().includes(q) ||
+      f.client_prenom?.toLowerCase().includes(q) ||
+      f.commercial_nom?.toLowerCase().includes(q) ||
+      f.commercial_prenom?.toLowerCase().includes(q);
+    const matchStatut     = !statutFilter     || f.statut === statutFilter;
+    const matchCommercial = !commercialFilter ||
+      `${f.commercial_prenom || ""} ${f.commercial_nom || ""}`.trim() === commercialFilter;
+    return matchSearch && matchStatut && matchCommercial;
+  });
+
+  const stats = [
+    { label: "Total",      value: factures.length,                                          color: "var(--blue)",   dim: "var(--blue-dim)",   icon: Icons.demand,     sub: "factures vente" },
+    { label: "Non payées", value: factures.filter((f) => f.statut === "non_payée").length, color: "var(--amber)",  dim: "var(--amber-dim)",  icon: Icons.warning,    sub: "impayées" },
+    { label: "Payées",     value: factures.filter((f) => f.statut === "payée").length,     color: "var(--teal)",   dim: "var(--teal-dim)",   icon: Icons.check,      sub: "réglées" },
+    { label: "Annulées",   value: factures.filter((f) => f.statut === "annulée").length,   color: "var(--rose)",   dim: "var(--rose-dim)",   icon: Icons.close,      sub: "annulées" },
+  ];
+
+  const runAction = async (id, path, msg) => {
+    setBusyId(id);
+    try {
+      await API.patch(`/factures/${id}/${path}`);
+      showToast(msg, "success");
+      fetchFactures();
+    } catch (err) {
+      showToast(err.response?.data?.message || "Erreur.", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <>
+      {/* Stats */}
+      <div className="erp-stats-grid">
+        {stats.map((s) => (
+          <div key={s.label} className="erp-stat-card">
+            <div className="erp-stat-icon" style={{ background: s.dim, color: s.color }}>
+              <Icon d={s.icon} size={16} />
+            </div>
+            <div className="erp-stat-label">{s.label}</div>
+            <div className="erp-stat-value" style={{ color: s.color }}>{s.value}</div>
+            <div className="erp-stat-sub">{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div className="erp-toolbar">
+        <div className="erp-toolbar-left">
+          <span className="erp-section-title">
+            Factures Vente <span className="erp-section-count">({filtered.length})</span>
+          </span>
+        </div>
+        <div className="erp-toolbar-right">
+          <div className="erp-search">
+            <Icon d={Icons.search} size={14} />
+            <input
+              placeholder="Rechercher..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select
+            className="erp-select"
+            value={statutFilter}
+            onChange={(e) => setStatutFilter(e.target.value)}
+          >
+            <option value="">Tous les statuts</option>
+            <option value="non_payée">Non payée</option>
+            <option value="payée">Payée</option>
+            <option value="annulée">Annulée</option>
+          </select>
+          {/* ── Filtre commercial ── */}
+          <select
+            className="erp-select"
+            value={commercialFilter}
+            onChange={(e) => setCommercialFilter(e.target.value)}
+          >
+            <option value="">Tous les commerciaux</option>
+            {commerciaux.map((c) => (
+              <option key={c.key} value={c.label}>{c.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="erp-table-container">
+        <table className="erp-table">
+          <thead>
+            <tr>
+              <th>N° Facture</th>
+              <th>Client</th>
+              <th>Commercial</th>
+              <th>Total HT</th>
+              <th>Total TTC</th>
+              <th>Statut</th>
+              <th>Date création</th>
+              <th>Date échéance</th>
+              <th style={{ width: 160 }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+                  Chargement...
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: 40, color: "var(--muted)" }}>
+                  Aucune facture vente
+                </td>
+              </tr>
+            ) : filtered.map((f) => (
+              <tr key={f.id}>
+                <td>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: "var(--blue)" }}>
+                    {f.num_facture}
+                  </span>
+                </td>
+                <td>
+                  <div style={{ fontWeight: 500, color: "var(--text)" }}>
+                    {f.client_prenom} {f.client_nom}
+                  </div>
+                  {f.client_identifiant && (
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{f.client_identifiant}</div>
+                  )}
+                </td>
+                <td style={{ fontSize: 12, color: "var(--text-2)" }}>
+                  {f.commercial_prenom} {f.commercial_nom}
+                </td>
+                <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
+                  {parseFloat(f.total_ht || 0).toFixed(3)} DT
+                </td>
+                <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600 }}>
+                  {parseFloat(f.total_ttc || 0).toFixed(3)} DT
+                </td>
+                <td>{statutBadge(f.statut)}</td>
+                <td style={{ fontSize: 12, color: "var(--text-2)" }}>
+                  {f.date_creation ? new Date(f.date_creation).toLocaleDateString("fr-FR") : "—"}
+                </td>
+                <td style={{ fontSize: 12, color: "var(--text-2)" }}>
+                  {f.date_echeance ? new Date(f.date_echeance).toLocaleDateString("fr-FR") : "—"}
+                </td>
+                <td>
+                  <div className="erp-actions">
+                    {f.statut === "non_payée" && (
+                      <button
+                        className="erp-act-btn erp-act-ok"
+                        title="Marquer payée"
+                        disabled={busyId === f.id}
+                        onClick={() => runAction(f.id, "payer", `Facture ${f.num_facture} payée.`)}
+                      >
+                        <Icon d={Icons.check} size={13} />
+                      </button>
+                    )}
+                    {f.statut !== "annulée" &&
+                      f.status_electronique !== "submitted" &&
+                      f.status_electronique !== "accepted" && (
+                      <button
+                        className="erp-act-btn erp-act-edit"
+                        title="Envoyer à TTN"
+                        disabled={busyId === f.id}
+                        onClick={() => runAction(f.id, "emettre", `Facture ${f.num_facture} envoyée à TTN.`)}
+                      >
+                        <Icon d={Icons.bell} size={13} />
+                      </button>
+                    )}
+                    {f.statut !== "payée" && f.statut !== "annulée" && (
+                      <button
+                        className="erp-act-btn erp-act-del"
+                        title="Annuler"
+                        disabled={busyId === f.id}
+                        onClick={() => runAction(f.id, "annuler", `Facture ${f.num_facture} annulée.`)}
+                      >
+                        <Icon d={Icons.close} size={13} />
+                      </button>
+                    )}
+                    {f.statut === "payée" && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, color: "var(--teal)",
+                        background: "var(--teal-dim)", padding: "3px 8px",
+                        borderRadius: 6, border: "1px solid rgba(18,72,76,0.2)",
+                      }}>
+                        ✓ Payée
+                      </span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 };
 
@@ -682,7 +1488,6 @@ const UserModal = ({ user, onClose, onSaved, toast }) => {
 const DeleteConfirmModal = ({ user, allUsers, onClose, onConfirm, loading }) => {
   const isCommercial = user?.role === "COMMERCIAL";
   const [nouveauCommercialId, setNouveauCommercialId] = useState("");
-
   const commercialClients = isCommercial
     ? allUsers.filter((u) => u.role === "CLIENT" && u.id_commercial === user.id)
     : [];
@@ -744,15 +1549,15 @@ const DeleteConfirmModal = ({ user, allUsers, onClose, onConfirm, loading }) => 
 
 // ─── UserDrawer ───────────────────────────────────────────────────────────────
 const UserDrawer = ({ user: initialUser, allUsers, onClose, onEdit }) => {
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [clients, setClients]           = useState([]);
+  const [loading, setLoading]           = useState(false);
   const [allCommercials, setAllCommercials] = useState([]);
-  const [navStack, setNavStack] = useState([initialUser]);
+  const [navStack, setNavStack]         = useState([initialUser]);
 
-  const user = navStack[navStack.length - 1];
+  const user      = navStack[navStack.length - 1];
   const canGoBack = navStack.length > 1;
-  const pushUser = (u) => setNavStack((prev) => [...prev, u]);
-  const popUser  = () => setNavStack((prev) => prev.slice(0, -1));
+  const pushUser  = (u) => setNavStack((prev) => [...prev, u]);
+  const popUser   = () => setNavStack((prev) => prev.slice(0, -1));
 
   useEffect(() => {
     API.get("/users?roleFilter=COMMERCIAL")
@@ -936,11 +1741,11 @@ const UserDrawer = ({ user: initialUser, allUsers, onClose, onEdit }) => {
 
 // ─── UsersPage ────────────────────────────────────────────────────────────────
 const UsersPage = ({ showToast }) => {
-  const [users, setUsers]         = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState("");
+  const [users, setUsers]           = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [search, setSearch]         = useState("");
   const [roleFilter, setRoleFilter] = useState("");
-  const [modalUser, setModalUser] = useState(null);
+  const [modalUser, setModalUser]   = useState(null);
   const [deleteUser, setDeleteUser] = useState(null);
   const [drawerUser, setDrawerUser] = useState(null);
   const [delLoading, setDelLoading] = useState(false);
@@ -996,10 +1801,10 @@ const UsersPage = ({ showToast }) => {
   });
 
   const stats = [
-    { label: "Total",  value: users.length,                              color: "var(--blue)",   dim: "var(--blue-dim)",   icon: Icons.users,    sub: "comptes enregistrés" },
-    { label: "Actifs", value: users.filter((u) => u.est_actif).length,   color: "var(--teal)",   dim: "var(--teal-dim)",   icon: Icons.check,    sub: "connectés récemment" },
-    { label: "Clients",value: users.filter((u) => u.role==="CLIENT").length, color:"var(--amber)", dim:"var(--amber-dim)", icon: Icons.shield,   sub: "comptes client" },
-    { label: "Équipe", value: users.filter((u) => u.role!=="CLIENT").length, color:"var(--violet)",dim:"var(--violet-dim)",icon: Icons.settings, sub: "admin / staff" },
+    { label: "Total",   value: users.length,                                   color: "var(--blue)",   dim: "var(--blue-dim)",   icon: Icons.users,    sub: "comptes enregistrés" },
+    { label: "Actifs",  value: users.filter((u) => u.est_actif).length,        color: "var(--teal)",   dim: "var(--teal-dim)",   icon: Icons.check,    sub: "connectés récemment" },
+    { label: "Clients", value: users.filter((u) => u.role==="CLIENT").length,  color: "var(--amber)",  dim: "var(--amber-dim)",  icon: Icons.shield,   sub: "comptes client" },
+    { label: "Équipe",  value: users.filter((u) => u.role!=="CLIENT").length,  color: "var(--violet)", dim: "var(--violet-dim)", icon: Icons.settings, sub: "admin / staff" },
   ];
 
   return (
@@ -1157,7 +1962,8 @@ const NAV = [
   { id: "reclamations",  label: "Réclamations",        icon: Icons.reclamations },
   { id: "stats",         label: "Statistiques",        icon: Icons.stats        },
   { id: "logs",          label: "Journal d'activité",  icon: Icons.activity     },
-  { id: "factures",      label: "Factures",            icon: Icons.demand       },
+  { id: "factures",       label: "Factures Achat",      icon: Icons.demand       },
+  { id: "facturesVente",  label: "Factures Vente",      icon: Icons.demand       },
   { id: "settings",      label: "Paramètres",          icon: Icons.settings     },
 ];
 
@@ -1171,7 +1977,8 @@ const PAGE_TITLES = {
   reclamations: "Réclamations & Support",
   stats:        "Statistiques",
   logs:         "Journal d'activité",
-  factures:     "Factures",
+  factures:      "Factures Achat",
+  facturesVente: "Factures Vente",
   settings:     "Paramètres",
 };
 
@@ -1269,7 +2076,8 @@ const AdminDashboard = () => {
             {page === "reclamations" && <SupportPage showToast={showToast} />}
             {page === "stats"        && <ComingSoon title="Statistiques" icon={Icons.stats} />}
             {page === "logs"         && <LogActivite showToast={showToast} />}
-            {page === "factures"     && <Factures showToast={showToast} />}
+            {page === "factures"     && <FacturesAchatPage showToast={showToast} />}
+            {page === "facturesVente"&& <FacturesVentePage showToast={showToast} />}
             {page === "settings"     && (
               <Parametres
                 currentUser={currentUser}
