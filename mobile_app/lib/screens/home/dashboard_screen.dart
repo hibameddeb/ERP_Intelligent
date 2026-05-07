@@ -108,12 +108,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Salutation / titre ────────────────────────────────────
-            const Text(
+            Text(
               'Vue d\'ensemble',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: AppConstants.textPrimary,
+                color: AppColors.textPrimary(context),
               ),
             ),
             const SizedBox(height: 4),
@@ -121,7 +121,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               'Statistiques de votre activité',
               style: TextStyle(
                 fontSize: 13,
-                color: AppConstants.textPrimary.withOpacity(0.6),
+                color: AppColors.textPrimary(context).withOpacity(0.6),
               ),
             ),
             const SizedBox(height: 20),
@@ -145,7 +145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _StatCard(
                   icon: Icons.people,
                   iconColor: const Color(0xFF3B82F6),
-                  bgColor: const Color(0xFFDBEAFE),
+                  bgColor: AppColors.primaryLight(context),
                   label: 'Clients',
                   value: '${s.nombreClients}',
                 ),
@@ -171,19 +171,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 24),
 
             // ── Section "Activité récente" (placeholder) ─────────────
-            const Text(
+            Text(
               'Activité récente',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: AppConstants.textPrimary,
+                color: AppColors.textPrimary(context),
               ),
             ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppConstants.surfaceColor,
+                color: AppColors.surface(context),
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
@@ -198,13 +198,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icon(
                     Icons.timeline,
                     size: 40,
-                    color: AppConstants.textPrimary.withOpacity(0.3),
+                    color: AppColors.textPrimary(context).withOpacity(0.3),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Aucune activité à afficher',
                     style: TextStyle(
-                      color: AppConstants.textPrimary.withOpacity(0.6),
+                      color: AppColors.textPrimary(context).withOpacity(0.6),
                       fontSize: 13,
                     ),
                   ),
@@ -241,7 +241,7 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppConstants.surfaceColor,
+        color: AppColors.surface(context),
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
@@ -268,10 +268,10 @@ class _StatCard extends StatelessWidget {
             children: [
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: AppConstants.textPrimary,
+                  color: AppColors.textPrimary(context),
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -281,7 +281,7 @@ class _StatCard extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontSize: 11,
-                  color: AppConstants.textPrimary.withOpacity(0.65),
+                  color: AppColors.textPrimary(context).withOpacity(0.65),
                   fontWeight: FontWeight.w500,
                 ),
                 maxLines: 2,
@@ -292,7 +292,7 @@ class _StatCard extends StatelessWidget {
                   subtitle!,
                   style: TextStyle(
                     fontSize: 10,
-                    color: AppConstants.textPrimary.withOpacity(0.45),
+                    color: AppColors.textPrimary(context).withOpacity(0.45),
                   ),
                 ),
             ],

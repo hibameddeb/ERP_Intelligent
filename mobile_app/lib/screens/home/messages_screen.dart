@@ -61,18 +61,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
+      backgroundColor: AppColors.background(context),
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Messages',
           style: TextStyle(
-            color: AppConstants.textPrimary,
+            color: AppColors.textPrimary(context),
             fontWeight: FontWeight.bold,
           ),
         ),
-        backgroundColor: AppConstants.surfaceColor,
+        backgroundColor: AppColors.surface(context),
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppConstants.textPrimary),
+        iconTheme: IconThemeData(color: AppColors.textPrimary(context)),
       ),
       body: Column(
         children: [
@@ -84,7 +84,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 hintText: 'Rechercher un contact…',
                 prefixIcon: const Icon(Icons.search),
                 filled: true,
-                fillColor: AppConstants.surfaceColor,
+                fillColor: AppColors.surface(context),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -218,7 +218,7 @@ class _ContactTile extends StatelessWidget {
         contact.fullName,
         style: TextStyle(
           fontWeight: hasUnread ? FontWeight.bold : FontWeight.w600,
-          color: AppConstants.textPrimary,
+          color: AppColors.textPrimary(context),
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -226,7 +226,7 @@ class _ContactTile extends StatelessWidget {
       subtitle: Text(
         contact.lastMessage ?? 'Aucun message',
         style: TextStyle(
-          color: hasUnread ? AppConstants.textPrimary : Colors.grey,
+          color: hasUnread ? AppColors.textPrimary(context) : Colors.grey,
           fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
         ),
         maxLines: 1,

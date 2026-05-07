@@ -14,6 +14,7 @@ import 'messages_screen.dart';
 import 'facture_screen.dart';
 import 'profile_screen.dart';
 import '../auth/login_screen.dart';
+import '../../core/app_colors.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -234,17 +235,17 @@ Future<void> _confirmLogout() async {
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
-        backgroundColor: AppConstants.backgroundColor,
+        backgroundColor: AppColors.background(context),
 
         // ── AppBar avec hamburger + cloche notif ────────────────────────
         appBar: AppBar(
-          backgroundColor: AppConstants.surfaceColor,
+          backgroundColor: AppColors.surface(context),
           elevation: 0.5,
-          iconTheme: const IconThemeData(color: AppConstants.textPrimary),
+          iconTheme: IconThemeData(color: AppColors.textPrimary(context)),
           title: Text(
             isOverlay ? _drawerOverlayTitle : currentTab.label,
-            style: const TextStyle(
-              color: AppConstants.textPrimary,
+            style: TextStyle(
+              color: AppColors.textPrimary(context),
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -291,7 +292,7 @@ Future<void> _confirmLogout() async {
             : NavigationBar(
                 selectedIndex: _currentIndex,
                 onDestinationSelected: _onBottomTap,
-                backgroundColor: AppConstants.surfaceColor,
+                backgroundColor: AppColors.surface(context),
                 indicatorColor:
                     AppConstants.primaryColor.withOpacity(0.15),
                 destinations: _bottomTabs

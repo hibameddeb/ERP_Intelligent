@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/constants.dart';
 import '../home/main_layout.dart';
+import '../../core/app_colors.dart';
 
 class Verify2FAScreen extends StatefulWidget {
   final String email;
@@ -42,7 +43,7 @@ class _Verify2FAScreenState extends State<Verify2FAScreen> {
     final isLoading = context.watch<AuthProvider>().isLoading;
 
     return Scaffold(
-      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, iconTheme: const IconThemeData(color: AppConstants.textPrimary)),
+      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: AppColors.textPrimary(context))),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),

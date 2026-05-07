@@ -11,11 +11,13 @@ const {
   addImageToProduit,
   deleteImage,
   setPrimaryImage,
+  checkActiveOrders,
 } = require("../controllers/produits_fournisseur");
 
 
 router.get("/", getAllProduitsFournisseur);
 router.get("/fournisseur/:id_fournisseur", getProduitsByFournisseur);
+router.get("/:id/active-orders", checkActiveOrders);
 router.get("/:id", getProduitFournisseurById);
 router.post("/", upload.array('images'), createProduitFournisseur);
 router.put("/:id", upload.array('images'), updateProduitFournisseur);

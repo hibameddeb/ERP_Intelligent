@@ -459,43 +459,178 @@ const AcceptModal = ({ commande, onClose, onConfirm, saving }) => {
 
 // ─── Order Detail Modal ───────────────────────────────────────────────────────
 const OrderDetailModal = ({ commande, onClose, onAccept, onRefuse, saving }) => {
-  const canAct = ["en attente","envoyée","brouillon"].includes(commande.statut);
+  const [loading, setLoading] = useState(true);
+  const [details, setDetails] = useState([]);
+  const [fullCmd, setFullCmd] = useState(commande);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await API.get(`/commandes-achat/${commande.id}`);
+        if (cancelled) return;
+        const data = r.data?.data || {};
+        setFullCmd({ ...commande, ...(data.commande || {}) });
+        setDetails(Array.isArray(data.details) ? data.details : []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [commande.id]);
+
+  const canAct = ["en attente", "envoyée", "brouillon"].includes(fullCmd.statut);
+
+  const totals = details.reduce((acc, l) => {
+    const qte   = Number(l.quantite) || 0;
+    const pu    = Number(l.prix_unitaire_ht) || 0;
+    const tTva  = Number(l.taux_tva) || 0;
+    const tFod  = Number(l.taux_fodec) || 0;
+    const ht    = qte * pu;
+    const fodec = ht * (tFod / 100);
+    const tva   = (ht + fodec) * (tTva / 100);
+    acc.ht    += ht;
+    acc.fodec += fodec;
+    acc.tva   += tva;
+    return acc;
+  }, { ht: 0, fodec: 0, tva: 0 });
+  const ttc = totals.ht + totals.fodec + totals.tva;
+
+  const fournisseurNom = `${fullCmd.fournisseur_prenom || ""} ${fullCmd.fournisseur_nom || ""}`.trim() || "—";
+  const adminNom       = `${fullCmd.admin_prenom || ""} ${fullCmd.admin_nom || ""}`.trim() || "—";
+
+  const handleDownloadPdf = async () => {
+    try {
+      const r = await API.get(`/commandes-achat/${fullCmd.id}/pdf`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `commande-${fullCmd.num_ordre || fullCmd.id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Erreur lors du téléchargement du PDF.");
+    }
+  };
+
   return (
     <div className="f-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="f-modal f-modal-wide">
+      <div className="f-modal f-modal-wide" style={{ maxWidth: 920 }}>
+
         <div className="f-modal-hdr">
           <div>
-            <div className="f-modal-title">Commande #{commande.id} — {commande.num_ordre}</div>
+            <div className="f-modal-title">Commande #{fullCmd.id} — {fullCmd.num_ordre}</div>
             <div style={{ fontSize:12, color:"var(--text3)", marginTop:3 }}>
-              Créée le {fmtDate(commande.date_creation)}
-              {commande.date_livraison && ` · Livraison : ${fmtDate(commande.date_livraison)}`}
+              Créée le {fmtDate(fullCmd.date_creation)}
+              {fullCmd.date_acceptation && ` · Acceptée le ${fmtDate(fullCmd.date_acceptation)}`}
+              {fullCmd.date_livraison    && ` · Livraison : ${fmtDate(fullCmd.date_livraison)}`}
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <StatutBadge statut={commande.statut} />
+            <StatutBadge statut={fullCmd.statut} />
             <button className="f-modal-close" onClick={onClose}><Icon d={I.close} size={16} /></button>
           </div>
         </div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:20 }}>
-          {[["Type", commande.type_en||"—"], ["Admin", `${commande.admin_prenom||""} ${commande.admin_nom||""}`.trim()||"—"], ["Total HT", fmtPrice(commande.total_ht)]].map(([label, val]) => (
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10, marginBottom:18 }}>
+          {[
+            ["Type",        fullCmd.type_en || "—"],
+            ["Admin",       adminNom],
+            ["Fournisseur", fullCmd.fournisseur_societe || fournisseurNom],
+            ["Articles",    `${details.length} ligne${details.length > 1 ? "s" : ""}`],
+          ].map(([label, val]) => (
             <div key={label} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:"var(--r)", padding:"12px 14px" }}>
               <div style={{ fontSize:10, color:"var(--text3)", fontWeight:700, textTransform:"uppercase", letterSpacing:".08em", marginBottom:4, fontFamily:"'Sora',sans-serif" }}>{label}</div>
-              <div style={{ fontSize:14, fontWeight:700, color:"var(--text)" }}>{val}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={val}>{val}</div>
             </div>
           ))}
         </div>
-        {commande.date_livraison && (
+
+        {fullCmd.date_livraison && (
           <div style={{ background:"var(--success-l)", border:"1px solid rgba(0,223,162,0.2)", borderRadius:"var(--r)", padding:"12px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:10, fontSize:13, color:"var(--accent)" }}>
             <Icon d={I.truck} size={16} />
-            Livraison prévue le <strong style={{ marginLeft:4 }}>{fmtDateLong(commande.date_livraison)}</strong>
+            Livraison prévue le <strong style={{ marginLeft:4 }}>{fmtDateLong(fullCmd.date_livraison)}</strong>
           </div>
         )}
-        {canAct && (
-          <div style={{ display:"flex", justifyContent:"flex-end", gap:10, paddingTop:16, borderTop:"1px solid var(--border)" }}>
-            <button className="f-btn f-btn-danger" onClick={onRefuse} disabled={saving}><Icon d={I.ban} size={13} /> Refuser</button>
+
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"var(--text2)", textTransform:"uppercase", letterSpacing:".09em", marginBottom:8, fontFamily:"'Sora',sans-serif" }}>
+            Détail des lignes
+          </div>
+
+          {loading ? (
+            <div className="f-empty" style={{ padding:30 }}>
+              <span className="f-spinner-dark" style={{ width:24, height:24, borderWidth:2.5 }} />
+            </div>
+          ) : details.length === 0 ? (
+            <div className="f-empty" style={{ padding:30 }}>
+              <Icon d={I.orders} size={32} /><p>Aucune ligne</p>
+            </div>
+          ) : (
+            <div className="f-tbl-wrap" style={{ marginBottom: 0 }}>
+              <table className="f-tbl">
+                <thead>
+                  <tr>
+                    <th>Produit</th>
+                    <th style={{ textAlign:"right" }}>Qté</th>
+                    <th style={{ textAlign:"right" }}>PU HT</th>
+                    <th style={{ textAlign:"right" }}>TVA</th>
+                    <th style={{ textAlign:"right" }}>FODEC</th>
+                    <th style={{ textAlign:"right" }}>Sous-total HT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {details.map(l => {
+                    const qte = Number(l.quantite) || 0;
+                    const pu  = Number(l.prix_unitaire_ht) || 0;
+                    return (
+                      <tr key={l.id}>
+                        <td style={{ fontWeight:600, color:"var(--text)" }}>{l.produit_fournisseur_nom || `Produit #${l.id_produit_fournisseur}`}</td>
+                        <td style={{ textAlign:"right", fontFamily:"monospace" }}>{qte}</td>
+                        <td style={{ textAlign:"right", fontFamily:"monospace" }}>{fmtPrice(pu)}</td>
+                        <td style={{ textAlign:"right", color:"var(--text3)", fontSize:12 }}>{l.taux_tva || 0}%</td>
+                        <td style={{ textAlign:"right", color:"var(--text3)", fontSize:12 }}>{l.taux_fodec || 0}%</td>
+                        <td style={{ textAlign:"right", fontWeight:700, fontFamily:"monospace", color:"var(--accent)" }}>{fmtPrice(qte * pu)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {!loading && details.length > 0 && (
+          <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:"var(--r)", padding:"14px 18px", marginBottom:16, marginLeft:"auto", maxWidth:340 }}>
+            {[
+              ["Total HT", totals.ht],
+              ["FODEC",    totals.fodec],
+              ["TVA",      totals.tva],
+            ].map(([lbl, val]) => (
+              <div key={lbl} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"4px 0", fontSize:13 }}>
+                <span style={{ color:"var(--text3)" }}>{lbl}</span>
+                <span style={{ fontFamily:"monospace", fontWeight:600, color:"var(--text2)" }}>{fmtPrice(val)}</span>
+              </div>
+            ))}
+            <div style={{ borderTop:"1px solid var(--border)", marginTop:8, paddingTop:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span style={{ fontSize:12, fontWeight:700, color:"var(--text)", textTransform:"uppercase", letterSpacing:".07em", fontFamily:"'Sora',sans-serif" }}>Total TTC</span>
+              <span style={{ fontFamily:"monospace", fontWeight:800, fontSize:16, color:"var(--accent)" }}>{fmtPrice(ttc)}</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display:"flex", justifyContent:"flex-end", gap:10, paddingTop:16, borderTop:"1px solid var(--border)" }}>
+          <button className="f-btn f-btn-ghost" onClick={handleDownloadPdf}>
+            <Icon d={I.invoice} size={13} /> Télécharger PDF
+          </button>
+          {canAct && <>
+            <button className="f-btn f-btn-danger"  onClick={onRefuse} disabled={saving}><Icon d={I.ban}   size={13} /> Refuser</button>
             <button className="f-btn f-btn-primary" onClick={onAccept} disabled={saving}><Icon d={I.check} size={13} /> Accepter</button>
-          </div>
-        )}
+          </>}
+        </div>
       </div>
     </div>
   );
@@ -504,6 +639,8 @@ const OrderDetailModal = ({ commande, onClose, onAccept, onRefuse, saving }) => 
 // ─── Product Form Modal ───────────────────────────────────────────────────────
 const ProductFormModal = ({ product, fournisseurId, onClose, onSaved, showToast }) => {
   const isEdit = !!product?.id;
+  const MAX_IMAGES = 5;
+
   const [form, setForm] = useState({
     nom_produit_f:    product?.nom_produit_f    || "",
     description_f:    product?.description_f    || "",
@@ -513,8 +650,70 @@ const ProductFormModal = ({ product, fournisseurId, onClose, onSaved, showToast 
     taux_fodec:       product?.taux_fodec       ?? 1,
     taux_dc:          product?.taux_dc          ?? 0,
   });
-  const [saving, setSaving] = useState(false);
+
+  const [existingImages, setExistingImages] = useState(product?.images || []);
+  const [newFiles,       setNewFiles]       = useState([]);
+  const [newPreviews,    setNewPreviews]    = useState([]);
+  const [saving,    setSaving]    = useState(false);
+  const [imgAction, setImgAction] = useState(null);
+  const [blocked,   setBlocked]   = useState(false);
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  // ── Vérifier si le produit a une commande active ──
+  useEffect(() => {
+    if (!isEdit) return;
+    let cancelled = false;
+    API.get(`/produits-fournisseur/${product.id}/active-orders`)
+      .then(r => { if (!cancelled) setBlocked(r.data?.blocked || false); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isEdit, product?.id]);
+
+  const handleFiles = files => {
+    const arr = Array.from(files || []);
+    const total = existingImages.length + newFiles.length + arr.length;
+    if (total > MAX_IMAGES) {
+      showToast(`Maximum ${MAX_IMAGES} images par produit.`, "error");
+      return;
+    }
+    const valid = arr.filter(f => f.type.startsWith("image/") && f.size <= 5 * 1024 * 1024);
+    if (valid.length !== arr.length) {
+      showToast("Certains fichiers ont été ignorés (non-image ou > 5 Mo).", "error");
+    }
+    valid.forEach(f => {
+      const reader = new FileReader();
+      reader.onload = e => setNewPreviews(prev => [...prev, e.target.result]);
+      reader.readAsDataURL(f);
+    });
+    setNewFiles(prev => [...prev, ...valid]);
+  };
+
+  const removeNewFile = i => {
+    setNewFiles(prev    => prev.filter((_, idx) => idx !== i));
+    setNewPreviews(prev => prev.filter((_, idx) => idx !== i));
+  };
+
+  const deleteExisting = async img => {
+    if (!window.confirm("Supprimer cette image ?")) return;
+    setImgAction(`del-${img.id}`);
+    try {
+      await API.delete(`/produits-fournisseur/${product.id}/images/${img.id}`);
+      setExistingImages(prev => prev.filter(x => x.id !== img.id));
+      showToast("Image supprimée.", "success");
+    } catch (err) { showToast(err.response?.data?.message || "Erreur.", "error"); }
+    finally { setImgAction(null); }
+  };
+
+  const setPrimary = async img => {
+    setImgAction(`prim-${img.id}`);
+    try {
+      await API.patch(`/produits-fournisseur/${product.id}/images/${img.id}/primary`);
+      setExistingImages(prev => prev.map(x => ({ ...x, is_primary: x.id === img.id })));
+      showToast("Image principale définie.", "success");
+    } catch (err) { showToast(err.response?.data?.message || "Erreur.", "error"); }
+    finally { setImgAction(null); }
+  };
 
   const handleSubmit = async () => {
     if (!form.nom_produit_f.trim() || !form.prix_unitaire_ht) {
@@ -522,56 +721,233 @@ const ProductFormModal = ({ product, fournisseurId, onClose, onSaved, showToast 
     }
     setSaving(true);
     try {
-      const payload = { id_fournisseur: fournisseurId, nom_produit_f: form.nom_produit_f.trim(), description_f: form.description_f.trim() || null, categorie: form.categorie.trim() || null, prix_unitaire_ht: parseFloat(form.prix_unitaire_ht), taux_tva: parseFloat(form.taux_tva)||0, taux_fodec: parseFloat(form.taux_fodec)||0, taux_dc: parseFloat(form.taux_dc)||0 };
-      if (isEdit) { await API.put(`/produits-fournisseur/${product.id}`, payload); showToast("Produit mis à jour.", "success"); }
-      else        { await API.post("/produits-fournisseur", payload);              showToast("Produit créé.", "success"); }
+      const fd = new FormData();
+      // Si bloqué en édition, on n'envoie QUE les images (pas les champs)
+      if (!blocked) {
+        fd.append("id_fournisseur",   fournisseurId);
+        fd.append("nom_produit_f",    form.nom_produit_f.trim());
+        fd.append("description_f",    form.description_f.trim() || "");
+        fd.append("categorie",        form.categorie.trim() || "");
+        fd.append("prix_unitaire_ht", parseFloat(form.prix_unitaire_ht));
+        fd.append("taux_tva",         parseFloat(form.taux_tva)   || 0);
+        fd.append("taux_fodec",       parseFloat(form.taux_fodec) || 0);
+        fd.append("taux_dc",          parseFloat(form.taux_dc)    || 0);
+      }
+      newFiles.forEach(f => fd.append("images", f));
+
+      const cfg = { headers: { "Content-Type": "multipart/form-data" } };
+      if (isEdit) { await API.put(`/produits-fournisseur/${product.id}`, fd, cfg); showToast(blocked ? "Images ajoutées." : "Produit mis à jour.", "success"); }
+      else        { await API.post(`/produits-fournisseur`, fd, cfg);              showToast("Produit créé.", "success"); }
       onSaved(); onClose();
     } catch (err) { showToast(err.response?.data?.message || "Erreur.", "error"); }
     finally { setSaving(false); }
   };
 
+  const totalImgs = existingImages.length + newFiles.length;
+  const canAddMore = totalImgs < MAX_IMAGES;
+
   return (
     <div className="f-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="f-modal">
         <div className="f-modal-hdr">
-          <span className="f-modal-title">{isEdit ? "Modifier le produit" : "Nouveau produit"}</span>
+          <span className="f-modal-title">{isEdit ? (blocked ? "Gérer les images" : "Modifier le produit") : "Nouveau produit"}</span>
           <button className="f-modal-close" onClick={onClose}><Icon d={I.close} size={16} /></button>
         </div>
+
+        {blocked && (
+          <div style={{ background:"var(--warning-l)", border:"1px solid var(--warning-b)", borderRadius:"var(--r)", padding:"10px 14px", marginBottom:14, display:"flex", alignItems:"center", gap:10, fontSize:12, color:"var(--warning)" }}>
+            <Icon d={I.alert} size={16} />
+            <span><strong>Commande active en cours</strong> — les champs sont verrouillés. Vous pouvez uniquement gérer les images.</span>
+          </div>
+        )}
+
         <div className="f-form-group">
           <label className="f-form-label">Nom du produit *</label>
-          <input className="f-form-input" value={form.nom_produit_f} onChange={set("nom_produit_f")} placeholder="Ex: Huile moteur 5W30" />
+          <input className="f-form-input" value={form.nom_produit_f} onChange={set("nom_produit_f")} placeholder="Ex: Huile moteur 5W30" disabled={blocked} />
         </div>
         <div className="f-form-group">
           <label className="f-form-label">Description</label>
-          <textarea className="f-form-textarea" value={form.description_f} onChange={set("description_f")} placeholder="Description…" />
+          <textarea className="f-form-textarea" value={form.description_f} onChange={set("description_f")} placeholder="Description…" disabled={blocked} />
         </div>
         <div className="f-form-row">
           <div className="f-form-group">
             <label className="f-form-label">Catégorie</label>
-            <input className="f-form-input" value={form.categorie} onChange={set("categorie")} placeholder="Ex: Informatique" />
+            <input className="f-form-input" value={form.categorie} onChange={set("categorie")} placeholder="Ex: Informatique" disabled={blocked} />
           </div>
           <div className="f-form-group">
             <label className="f-form-label">Prix unitaire HT *</label>
-            <input className="f-form-input" type="number" min="0" step="0.001" value={form.prix_unitaire_ht} onChange={set("prix_unitaire_ht")} placeholder="0.000" />
+            <input className="f-form-input" type="number" min="0" step="0.001" value={form.prix_unitaire_ht} onChange={set("prix_unitaire_ht")} placeholder="0.000" disabled={blocked} />
           </div>
         </div>
+
+        {/* ── IMAGES ── */}
+        <div className="f-form-group">
+          <label className="f-form-label" style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <span>Images du produit</span>
+            <span style={{ fontSize:11, color:"var(--text3)", fontWeight:500 }}>{totalImgs}/{MAX_IMAGES}</span>
+          </label>
+
+          <label
+            htmlFor="prod-img-input"
+            onDragOver={e => { e.preventDefault(); }}
+            onDrop={e => { e.preventDefault(); if (canAddMore) handleFiles(e.dataTransfer.files); }}
+            style={{
+              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+              padding:"18px 16px", border:"2px dashed var(--border2)", borderRadius:"var(--r)",
+              background:"var(--surface2)", cursor: canAddMore ? "pointer" : "not-allowed",
+              opacity: canAddMore ? 1 : 0.5, gap:6, marginBottom:12
+            }}
+          >
+            <Icon d={I.image} size={22} />
+            <span style={{ fontSize:12, color:"var(--text2)", fontWeight:600 }}>
+              {canAddMore ? "Cliquer ou glisser-déposer" : "Limite atteinte"}
+            </span>
+            <span style={{ fontSize:10, color:"var(--text3)" }}>PNG, JPG, WebP — max 5 Mo</span>
+          </label>
+          <input
+            id="prod-img-input" type="file" accept="image/*" multiple
+            disabled={!canAddMore}
+            style={{ display:"none" }}
+            onChange={e => { handleFiles(e.target.files); e.target.value = ""; }}
+          />
+
+          {existingImages.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:6 }}>Images actuelles</div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                {existingImages.map(img => (
+                  <div key={img.id} style={{ position:"relative", width:78, height:78, borderRadius:8, overflow:"hidden", border: img.is_primary ? "2px solid var(--accent)" : "1px solid var(--border)", background:"var(--surface3)" }}>
+                    <img src={`http://localhost:5000${img.image_url}`} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                    {img.is_primary && (
+                      <span style={{ position:"absolute", top:3, left:3, background:"var(--accent)", color:"#000", fontSize:9, fontWeight:700, padding:"2px 5px", borderRadius:4 }}>★</span>
+                    )}
+                    <div style={{ position:"absolute", bottom:0, left:0, right:0, display:"flex", gap:2, padding:3, background:"rgba(0,0,0,0.55)" }}>
+                      {!img.is_primary && (
+                        <button
+                          onClick={() => setPrimary(img)} disabled={imgAction === `prim-${img.id}`}
+                          title="Définir comme principale"
+                          style={{ flex:1, fontSize:10, padding:"3px 0", background:"transparent", color:"#fff", border:"none", cursor:"pointer" }}
+                        >★</button>
+                      )}
+                      <button
+                        onClick={() => deleteExisting(img)} disabled={imgAction === `del-${img.id}`}
+                        title="Supprimer"
+                        style={{ flex:1, fontSize:10, padding:"3px 0", background:"transparent", color:"var(--danger)", border:"none", cursor:"pointer" }}
+                      >✕</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {newPreviews.length > 0 && (
+            <div>
+              <div style={{ fontSize:10, fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:6 }}>À uploader</div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                {newPreviews.map((src, i) => (
+                  <div key={i} style={{ position:"relative", width:78, height:78, borderRadius:8, overflow:"hidden", border:"1px dashed var(--accent)", background:"var(--surface3)" }}>
+                    <img src={src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                    <button
+                      onClick={() => removeNewFile(i)} title="Retirer"
+                      style={{ position:"absolute", top:3, right:3, width:20, height:20, border:"none", borderRadius:"50%", background:"rgba(0,0,0,0.7)", color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:"var(--r)", padding:"14px 16px", marginBottom:14 }}>
           <div style={{ fontSize:11, fontWeight:700, color:"var(--text2)", textTransform:"uppercase", letterSpacing:".09em", marginBottom:12, fontFamily:"'Sora',sans-serif" }}>Taux et taxes</div>
           <div className="f-form-row" style={{ marginBottom:0 }}>
             {[["taux_tva","TVA (%)"],["taux_fodec","FODEC (%)"],["taux_dc","DC (%)"]].map(([k,lbl]) => (
               <div key={k} className="f-form-group" style={{ marginBottom:0 }}>
                 <label className="f-form-label">{lbl}</label>
-                <input className="f-form-input" type="number" min="0" max="100" step="0.1" value={form[k]} onChange={set(k)} />
+                <input className="f-form-input" type="number" min="0" max="100" step="0.1" value={form[k]} onChange={set(k)} disabled={blocked} />
               </div>
             ))}
           </div>
         </div>
+
         <div className="f-modal-footer">
           <button className="f-btn f-btn-ghost" onClick={onClose} disabled={saving}>Annuler</button>
           <button className="f-btn f-btn-primary" onClick={handleSubmit} disabled={saving}>
             {saving ? <><span className="f-spinner" /> Enregistrement…</> : <><Icon d={I.save} size={13} /> {isEdit ? "Sauvegarder" : "Créer"}</>}
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Product Gallery Modal ────────────────────────────────────────────────────
+const ProductGalleryModal = ({ product, onClose }) => {
+  const imgs = product.images || [];
+  const sorted = [...imgs].sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0));
+  const [idx, setIdx] = useState(0);
+  const cur = sorted[idx];
+
+  return (
+    <div className="f-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="f-modal f-modal-wide" style={{ maxWidth: 720 }}>
+        <div className="f-modal-hdr">
+          <div>
+            <div className="f-modal-title">{product.nom_produit_f}</div>
+            <div style={{ fontSize:12, color:"var(--text3)", marginTop:3 }}>
+              {imgs.length} image{imgs.length > 1 ? "s" : ""} · {fmtPrice(product.prix_unitaire_ht)} HT
+            </div>
+          </div>
+          <button className="f-modal-close" onClick={onClose}><Icon d={I.close} size={16} /></button>
+        </div>
+
+        {imgs.length === 0 ? (
+          <div className="f-empty" style={{ padding:60 }}>
+            <Icon d={I.image} size={48} />
+            <p>Aucune image disponible</p>
+          </div>
+        ) : (
+          <>
+            <div style={{ width:"100%", height:380, background:"var(--surface3)", borderRadius:"var(--r)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", marginBottom:12, position:"relative" }}>
+              <img src={`http://localhost:5000${cur.image_url}`} alt="" style={{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain" }} />
+              {cur.is_primary && (
+                <span style={{ position:"absolute", top:10, left:10, background:"var(--accent)", color:"#000", fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>★ Principale</span>
+              )}
+              {imgs.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setIdx(i => (i - 1 + sorted.length) % sorted.length)}
+                    style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", width:36, height:36, borderRadius:"50%", border:"none", background:"rgba(0,0,0,0.6)", color:"#fff", fontSize:18, cursor:"pointer" }}
+                  >‹</button>
+                  <button
+                    onClick={() => setIdx(i => (i + 1) % sorted.length)}
+                    style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", width:36, height:36, borderRadius:"50%", border:"none", background:"rgba(0,0,0,0.6)", color:"#fff", fontSize:18, cursor:"pointer" }}
+                  >›</button>
+                </>
+              )}
+            </div>
+
+            {imgs.length > 1 && (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"center" }}>
+                {sorted.map((img, i) => (
+                  <button
+                    key={img.id} onClick={() => setIdx(i)}
+                    style={{ width:60, height:60, borderRadius:6, overflow:"hidden", border: i === idx ? "2px solid var(--accent)" : "1px solid var(--border)", background:"var(--surface3)", cursor:"pointer", padding:0 }}
+                  >
+                    <img src={`http://localhost:5000${img.image_url}`} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {product.description_f && (
+          <div style={{ marginTop:14, padding:"12px 14px", background:"var(--surface2)", borderRadius:"var(--r)", fontSize:13, color:"var(--text2)", lineHeight:1.5 }}>
+            {product.description_f}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1028,10 +1404,26 @@ const ProductsPage = ({ user, showToast }) => {
   const [modal,    setModal]    = useState(null);
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [gallery,  setGallery]  = useState(null);
+  const [blockedMap, setBlockedMap] = useState({});
 
   const fetchProduits = useCallback(async () => {
     setLoading(true);
-    try { const r = await API.get(`/produits-fournisseur/fournisseur/${user.id}`); setProduits(unwrap(r.data)); }
+    try {
+      const r = await API.get(`/produits-fournisseur/fournisseur/${user.id}`);
+      const list = unwrap(r.data);
+      setProduits(list);
+
+      // Vérifier blocages en parallèle
+      const checks = await Promise.all(
+        list.map(p =>
+          API.get(`/produits-fournisseur/${p.id}/active-orders`)
+            .then(res => [p.id, res.data?.blocked || false])
+            .catch(() => [p.id, false])
+        )
+      );
+      setBlockedMap(Object.fromEntries(checks));
+    }
     catch { showToast("Erreur chargement produits.", "error"); }
     finally { setLoading(false); }
   }, [user.id, showToast]);
@@ -1068,7 +1460,17 @@ const ProductsPage = ({ user, showToast }) => {
             <div className="f-prod-grid">
               {filtered.map(p => (
                 <div className="f-prod-card" key={p.id}>
-                  <div className="f-prod-img">{p.images?.[0]?.image_url ? <SafeImg src={p.images[0].image_url} size={32} /> : <Icon d={I.image} size={32} />}</div>
+                  <div
+                    className="f-prod-img"
+                    onClick={() => setGallery(p)}
+                    style={{ cursor:"pointer", position:"relative" }}
+                    title="Voir les images"
+                  >
+                    {p.images?.[0]?.image_url ? <SafeImg src={p.images[0].image_url} size={32} /> : <Icon d={I.image} size={32} />}
+                    {p.images?.length > 1 && (
+                      <span style={{ position:"absolute", top:6, right:6, background:"rgba(0,0,0,0.6)", color:"#fff", fontSize:10, fontWeight:700, padding:"2px 6px", borderRadius:4 }}>+{p.images.length - 1}</span>
+                    )}
+                  </div>
                   <div className="f-prod-body">
                     <div className="f-prod-name" title={p.nom_produit_f}>{p.nom_produit_f}</div>
                     {p.categorie && <div style={{ fontSize:11, color:"var(--text3)", marginBottom:6, display:"flex", alignItems:"center", gap:4 }}><Icon d={I.tag} size={11} /> {p.categorie}</div>}
@@ -1077,10 +1479,24 @@ const ProductsPage = ({ user, showToast }) => {
                       {p.taux_tva   > 0 && <span className="f-badge f-badge-gray">TVA {p.taux_tva}%</span>}
                       {p.taux_fodec > 0 && <span className="f-badge f-badge-gray">FODEC {p.taux_fodec}%</span>}
                       {p.taux_dc    > 0 && <span className="f-badge f-badge-gray">DC {p.taux_dc}%</span>}
+                      {blockedMap[p.id] && <span className="f-badge" style={{ background:"var(--warning-l)", color:"var(--warning)", border:"1px solid var(--warning-b)" }}>🔒 Cmd active</span>}
                     </div>
                     <div className="f-prod-actions">
-                      <button className="f-btn f-btn-ghost f-btn-sm" style={{ flex:1 }} onClick={() => setModal(p)}><Icon d={I.edit} size={12} /> Modifier</button>
-                      <button className="f-icon-btn f-icon-btn-red" onClick={() => setToDelete(p)}><Icon d={I.close} size={13} /></button>
+                      <button
+                        className="f-btn f-btn-ghost f-btn-sm"
+                        style={{ flex:1 }}
+                        onClick={() => setModal(p)}
+                        title={blockedMap[p.id] ? "Commande active : seules les images peuvent être gérées" : "Modifier"}
+                      >
+                        <Icon d={I.edit} size={12} /> {blockedMap[p.id] ? "Images" : "Modifier"}
+                      </button>
+                      <button
+                        className="f-icon-btn f-icon-btn-red"
+                        onClick={() => setToDelete(p)}
+                        disabled={blockedMap[p.id]}
+                        style={{ opacity: blockedMap[p.id] ? 0.4 : 1, cursor: blockedMap[p.id] ? "not-allowed" : "pointer" }}
+                        title={blockedMap[p.id] ? "Suppression bloquée — commande active" : "Supprimer"}
+                      ><Icon d={I.close} size={13} /></button>
                     </div>
                   </div>
                 </div>
@@ -1089,6 +1505,7 @@ const ProductsPage = ({ user, showToast }) => {
           )
       }
 
+      {gallery && <ProductGalleryModal product={gallery} onClose={() => setGallery(null)} />}
       {modal !== null && <ProductFormModal product={Object.keys(modal).length ? modal : null} fournisseurId={user.id} onClose={() => setModal(null)} onSaved={fetchProduits} showToast={showToast} />}
       {toDelete && (
         <div className="f-overlay" onClick={e => e.target === e.currentTarget && setToDelete(null)}>

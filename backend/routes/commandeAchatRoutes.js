@@ -14,6 +14,9 @@ router.get("/mes-commandes", verifyToken, isFournisseur, commandeAchatController
 router.post("/", verifyToken, isAdmin, commandeAchatController.createCommandeAchat);
 
 router.get("/:id", verifyToken, isAdminOrFournisseur, commandeAchatController.getCommandeAchatById);
+
+router.get("/:id/pdf", verifyToken, isAdminOrFournisseur, commandeAchatController.getCommandePdf);
+
 router.get("/fournisseur/:id_fournisseur", verifyToken, isAdminOrFournisseur, commandeAchatController.getCommandesByFournisseur);
 
 

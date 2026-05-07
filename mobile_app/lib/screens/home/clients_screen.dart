@@ -55,7 +55,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F3FF), // soft lavender wash
+      backgroundColor: AppColors.background(context), // soft lavender wash
       body: SafeArea(
         child: FutureBuilder<List<User>>(
           future: _clientsFuture,
@@ -117,7 +117,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                       child: _EmptyView(),
                     )
                   else if (filtered.isEmpty)
-                    const SliverFillRemaining(
+                    SliverFillRemaining(
                       hasScrollBody: false,
                       child: Center(
                         child: Padding(
@@ -125,7 +125,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                           child: Text(
                             'Aucun résultat pour cette recherche',
                             style: TextStyle(
-                                color: AppConstants.textSecondary,
+                                color: AppColors.textSecondary(context),
                                 fontSize: 15),
                             textAlign: TextAlign.center,
                           ),
@@ -178,11 +178,11 @@ class _ClientsScreenState extends State<ClientsScreen> {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.surface(context),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: AppColors.shadow(context),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -215,19 +215,19 @@ class _ClientsScreenState extends State<ClientsScreen> {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface(context),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
+                      color: AppColors.shadow(context),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.notifications_outlined,
-                  color: AppConstants.textPrimary,
+                  color: AppColors.textPrimary(context),
                   size: 22,
                 ),
               ),
@@ -240,7 +240,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFFFF3B30),
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
+                    border: Border.all(color: AppColors.surface(context), width: 1.5),
                   ),
                 ),
               ),
@@ -261,10 +261,10 @@ class _ClientsScreenState extends State<ClientsScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
+              Text(
                 'Mes Clients',
                 style: TextStyle(
-                  color: Color(0xFF1A1A2E),
+                  color: AppColors.textPrimary(context),
                   fontSize: 30,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.8,
@@ -302,11 +302,11 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     padding: const EdgeInsets.only(top: 14),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppColors.surface(context),
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
+                            color: AppColors.shadow(context),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -315,10 +315,11 @@ class _ClientsScreenState extends State<ClientsScreen> {
                       child: TextField(
                         controller: _searchCtrl,
                         autofocus: true,
+                        style: TextStyle(color: AppColors.textPrimary(context)),
                         decoration: InputDecoration(
                           hintText: 'Nom, email ou ville…',
                           hintStyle: TextStyle(
-                              color: Colors.grey.shade400, fontSize: 14),
+                              color: AppColors.textMuted(context), fontSize: 14),
                           prefixIcon: const Icon(Icons.search_rounded,
                               color: AppConstants.primaryColor, size: 22),
                           suffixIcon: _search.isEmpty
@@ -353,10 +354,10 @@ class _ClientsScreenState extends State<ClientsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
+          Text(
             'Tous les clients',
             style: TextStyle(
-              color: Color(0xFF1A1A2E),
+              color: AppColors.textPrimary(context),
               fontSize: 16,
               fontWeight: FontWeight.bold,
               letterSpacing: -0.2,
@@ -365,7 +366,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
           Text(
             'Trier',
             style: TextStyle(
-              color: Colors.grey.shade500,
+              color: AppColors.textSecondary(context),
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -421,8 +422,8 @@ class _StoriesRow extends StatelessWidget {
                         ),
                         child: Container(
                           padding: const EdgeInsets.all(2),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFF5F3FF),
+                          decoration: BoxDecoration(
+                            color: AppColors.background(context),
                             shape: BoxShape.circle,
                           ),
                           child: CircleAvatar(
@@ -467,10 +468,10 @@ class _StoriesRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A2E),
+                        color: AppColors.textPrimary(context),
                       ),
                     ),
                   ),
@@ -499,7 +500,7 @@ class _ClientCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: AppColors.surface(context),
       borderRadius: BorderRadius.circular(18),
       elevation: 0,
       child: InkWell(
@@ -555,10 +556,10 @@ class _ClientCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             client.fullName,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF1A1A2E),
+                              color: AppColors.textPrimary(context),
                               letterSpacing: -0.2,
                             ),
                             maxLines: 1,
@@ -576,7 +577,7 @@ class _ClientCard extends StatelessWidget {
                           : client.email,
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.grey.shade600,
+                        color: AppColors.textSecondary(context),
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -610,7 +611,7 @@ class _CityChip extends StatelessWidget {
       margin: const EdgeInsets.only(left: 8),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F3FF),
+        color: AppColors.background(context),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -659,12 +660,12 @@ class _EmptyView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Aucun client assigné',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
+                color: AppColors.textPrimary(context),
               ),
             ),
             const SizedBox(height: 6),
@@ -673,7 +674,7 @@ class _EmptyView extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey.shade600,
+                color: AppColors.textSecondary(context),
                 height: 1.4,
               ),
             ),
@@ -701,19 +702,19 @@ class _ErrorView extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFE5E5),
+                color: AppColors.errorPale(context),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.wifi_off_rounded,
-                  size: 38, color: Color(0xFFFF3B30)),
+                  size: 38, color: AppConstants.errorColor),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Erreur de chargement',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
+                color: AppColors.textPrimary(context),
               ),
             ),
             const SizedBox(height: 6),
@@ -721,7 +722,7 @@ class _ErrorView extends StatelessWidget {
               error,
               textAlign: TextAlign.center,
               style: TextStyle(
-                  fontSize: 13, color: Colors.grey.shade600, height: 1.4),
+                  fontSize: 13, color: AppColors.textSecondary(context), height: 1.4),
             ),
             const SizedBox(height: 18),
             ElevatedButton.icon(
@@ -758,9 +759,9 @@ class _ClientDetailSheet extends StatelessWidget {
       minChildSize: 0.4,
       expand: false,
       builder: (_, sc) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: BoxDecoration(
+          color: AppColors.surface(context),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: SingleChildScrollView(
           controller: sc,
@@ -774,7 +775,7 @@ class _ClientDetailSheet extends StatelessWidget {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: AppColors.border(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -799,8 +800,10 @@ class _ClientDetailSheet extends StatelessWidget {
                     const SizedBox(height: 12),
                     Text(
                       client.fullName,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary(context)),
                     ),
                     const SizedBox(height: 4),
                     Container(
@@ -926,10 +929,10 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.bold,
-        color: AppConstants.textSecondary,
+        color: AppColors.textSecondary(context),
         letterSpacing: 0.5,
       ),
     );
@@ -967,15 +970,15 @@ class _InfoTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12,
-                        color: AppConstants.textSecondary)),
+                        color: AppColors.textSecondary(context))),
                 const SizedBox(height: 2),
                 Text(value,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: AppConstants.textPrimary)),
+                        color: AppColors.textPrimary(context))),
               ],
             ),
           ),

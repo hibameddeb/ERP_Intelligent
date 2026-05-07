@@ -58,7 +58,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sécurité'),
-        backgroundColor: AppConstants.surfaceColor,
+        backgroundColor: AppColors.surface(context),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -98,9 +98,9 @@ class _SecurityScreenState extends State<SecurityScreen> {
               const SizedBox(height: 24),
               const Text('Authentification à Deux Facteurs (2FA)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'L\'authentification 2FA est actuellement active sur votre compte, elle sécurise vos connexions via des codes envoyés à votre adresse email.',
-                style: TextStyle(color: AppConstants.textSecondary),
+                style: TextStyle(color: AppColors.textSecondary(context)),
               ),
               const SizedBox(height: 16),
               Container(

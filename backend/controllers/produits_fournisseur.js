@@ -1,4 +1,23 @@
 const pool = require("../config/db");
+
+// ─────────────────────────────────────────────
+// HELPER : vérifier si un produit est dans une commande active
+// Bloque modif/delete si statut ∈ {en attente, envoyée, acceptée, brouillon}
+// ─────────────────────────────────────────────
+const ACTIVE_STATUTS = ["en attente", "envoyée", "acceptée", "brouillon"];
+
+const hasActiveOrders = async (client, produitId) => {
+  const r = await client.query(
+    `SELECT COUNT(*)::int AS cnt
+     FROM detail_commande_achat dca
+     JOIN commande_achat ca ON ca.id = dca.id_commande_achat
+     WHERE dca.id_produit_fournisseur = $1
+       AND ca.statut = ANY($2::text[])`,
+    [produitId, ACTIVE_STATUTS]
+  );
+  return r.rows[0].cnt > 0;
+};
+
 const getAllProduitsFournisseur = async (req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -186,26 +205,50 @@ const updateProduitFournisseur = async (req, res) => {
     if (existing.rows.length === 0)
       return res.status(404).json({ success: false, message: "Produit introuvable" });
 
-    const { rows } = await pool.query(
-      `
-      UPDATE produit_fournisseur SET
-        id_fournisseur   = COALESCE($1, id_fournisseur),
-        nom_produit_f    = COALESCE($2, nom_produit_f),
-        description_f    = COALESCE($3, description_f),
-        categorie        = COALESCE($4, categorie),
-        prix_unitaire_ht = COALESCE($5, prix_unitaire_ht),
-        taux_tva         = COALESCE($6, taux_tva),
-        taux_fodec       = COALESCE($7, taux_fodec),
-        taux_dc          = COALESCE($8, taux_dc),
-        updated_at       = NOW()
-      WHERE id = $9
-      RETURNING *
-      `,
-      [id_fournisseur, nom_produit_f, description_f, categorie,
-       prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, id]
-    );
+    // ── Détecter si la requête tente de modifier des champs ──
+    // (n'importe quel champ envoyé, même vide, compte comme tentative de modif)
+    const hasFieldChanges = [
+      id_fournisseur, nom_produit_f, description_f, categorie,
+      prix_unitaire_ht, taux_tva, taux_fodec, taux_dc,
+    ].some(v => v !== undefined);
 
-    const updatedProduit = rows[0];
+    // ── Si on touche aux champs, bloquer si commande active ──
+    if (hasFieldChanges && await hasActiveOrders(pool, id)) {
+      return res.status(403).json({
+        success: false,
+        message: "Modification impossible : ce produit fait partie d'une commande active (en attente, envoyée, acceptée ou brouillon). Vous pouvez uniquement ajouter des images.",
+      });
+    }
+
+    // ── UPDATE des champs uniquement si on a des changements ──
+    let updatedProduit;
+    if (hasFieldChanges) {
+      const { rows } = await pool.query(
+        `
+        UPDATE produit_fournisseur SET
+          id_fournisseur   = COALESCE($1, id_fournisseur),
+          nom_produit_f    = COALESCE($2, nom_produit_f),
+          description_f    = COALESCE($3, description_f),
+          categorie        = COALESCE($4, categorie),
+          prix_unitaire_ht = COALESCE($5, prix_unitaire_ht),
+          taux_tva         = COALESCE($6, taux_tva),
+          taux_fodec       = COALESCE($7, taux_fodec),
+          taux_dc          = COALESCE($8, taux_dc),
+          updated_at       = NOW()
+        WHERE id = $9
+        RETURNING *
+        `,
+        [id_fournisseur, nom_produit_f, description_f, categorie,
+         prix_unitaire_ht, taux_tva, taux_fodec, taux_dc, id]
+      );
+      updatedProduit = rows[0];
+    } else {
+      // Pas de champs → juste récupérer le produit pour le renvoyer
+      const { rows } = await pool.query(
+        "SELECT * FROM produit_fournisseur WHERE id = $1", [id]
+      );
+      updatedProduit = rows[0];
+    }
 
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
@@ -237,6 +280,15 @@ const deleteProduitFournisseur = async (req, res) => {
     if (existing.rows.length === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({ success: false, message: "Produit introuvable" });
+    }
+
+    // ── Bloquer si commande active ──
+    if (await hasActiveOrders(client, id)) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({
+        success: false,
+        message: "Suppression impossible : ce produit fait partie d'une commande active.",
+      });
     }
 
     await client.query("DELETE FROM produit_image WHERE id_produit = $1", [id]);
@@ -328,6 +380,33 @@ const setPrimaryImage = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────
+// CHECK : ce produit a-t-il des commandes actives ?
+// Utilisé par le frontend pour griser les boutons Modifier/Supprimer
+// ─────────────────────────────────────────────
+const checkActiveOrders = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const r = await pool.query(
+      `SELECT ca.id, ca.num_ordre, ca.statut
+       FROM detail_commande_achat dca
+       JOIN commande_achat ca ON ca.id = dca.id_commande_achat
+       WHERE dca.id_produit_fournisseur = $1
+         AND ca.statut = ANY($2::text[])
+       ORDER BY ca.date_creation DESC`,
+      [id, ACTIVE_STATUTS]
+    );
+    res.status(200).json({
+      success: true,
+      blocked: r.rows.length > 0,
+      activeOrders: r.rows,
+    });
+  } catch (error) {
+    console.error("checkActiveOrders:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getAllProduitsFournisseur,
   getProduitFournisseurById,
@@ -338,4 +417,5 @@ module.exports = {
   addImageToProduit,
   deleteImage,
   setPrimaryImage,
+  checkActiveOrders,
 };

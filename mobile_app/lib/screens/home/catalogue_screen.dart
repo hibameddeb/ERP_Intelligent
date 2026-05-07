@@ -88,20 +88,20 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
     final cart = context.watch<CartProvider>();
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
+      backgroundColor: AppColors.background(context),
       appBar: AppBar(
-        title: const Text('Catalogue',
+        title: Text('Catalogue',
             style: TextStyle(
-                color: AppConstants.textPrimary, fontWeight: FontWeight.bold)),
-        backgroundColor: AppConstants.surfaceColor,
+                color: AppColors.textPrimary(context), fontWeight: FontWeight.bold)),
+        backgroundColor: AppColors.surface(context),
         elevation: 0,
         actions: [
           Stack(
             alignment: Alignment.center,
             children: [
               IconButton(
-                icon: const Icon(Icons.shopping_cart_outlined,
-                    color: AppConstants.textPrimary),
+                icon: Icon(Icons.shopping_cart_outlined,
+                    color: AppColors.textPrimary(context)),
                 onPressed: () => _showCartSheet(context),
               ),
               if (cart.itemCount > 0)
@@ -132,7 +132,7 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
         children: [
           // ── Search + Filter bar ───────────────────────────────────────────────
           Container(
-            color: AppConstants.surfaceColor,
+            color: AppColors.surface(context),
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Column(
               children: [
@@ -140,11 +140,11 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
                 TextField(
                   decoration: InputDecoration(
                     hintText: 'Rechercher un produit...',
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        color: AppConstants.textSecondary),
+                    prefixIcon: Icon(Icons.search_rounded,
+                        color: AppColors.textSecondary(context)),
                     contentPadding: const EdgeInsets.symmetric(vertical: 12),
                     filled: true,
-                    fillColor: AppConstants.backgroundColor,
+                    fillColor: AppColors.background(context),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -171,11 +171,11 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
                           selected: selected,
                           selectedColor: AppConstants.primaryColor,
                           labelStyle: TextStyle(
-                            color: selected ? Colors.white : AppConstants.textSecondary,
+                            color: selected ? Colors.white : AppColors.textSecondary(context),
                             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                             fontSize: 12,
                           ),
-                          backgroundColor: AppConstants.backgroundColor,
+                          backgroundColor: AppColors.background(context),
                           side: BorderSide.none,
                           onSelected: (_) {
                             setState(() {
@@ -207,8 +207,8 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.refresh_rounded,
-                        size: 20, color: AppConstants.textSecondary),
+                    icon: Icon(Icons.refresh_rounded,
+                        size: 20, color: AppColors.textSecondary(context)),
                     onPressed: _loadProducts,
                     tooltip: 'Actualiser',
                   ),
@@ -235,8 +235,8 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.wifi_off_rounded,
-                  size: 64, color: AppConstants.textSecondary),
+              Icon(Icons.wifi_off_rounded,
+                  size: 64, color: AppColors.textSecondary(context)),
               const SizedBox(height: 16),
               Text('Erreur de chargement',
                   style: Theme.of(context).textTheme.titleLarge),
@@ -260,12 +260,12 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.inventory_2_outlined,
-                size: 64, color: AppConstants.textSecondary),
+            Icon(Icons.inventory_2_outlined,
+                size: 64, color: AppColors.textSecondary(context)),
             const SizedBox(height: 16),
-            const Text('Aucun produit trouvé',
+            Text('Aucun produit trouvé',
                 style: TextStyle(
-                    fontSize: 16, color: AppConstants.textSecondary)),
+                    fontSize: 16, color: AppColors.textSecondary(context))),
           ],
         ),
       );
@@ -278,7 +278,7 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
         padding: const EdgeInsets.all(16),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.70,
+          childAspectRatio: 0.62,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
@@ -391,7 +391,7 @@ class _ProductCard extends StatelessWidget {
           children: [
             // ── Image zone ──────────────────────────────────────────────────
             Expanded(
-              flex: 5,
+              flex: 4,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -428,7 +428,7 @@ class _ProductCard extends StatelessWidget {
             Expanded(
               flex: 5,
               child: Padding(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -441,17 +441,19 @@ class _ProductCard extends StatelessWidget {
                       children: [
                         Text(
                           product.nomCommercial,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 13),
-                          maxLines: 2,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: AppColors.textPrimary(context)),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         if (product.fournisseurSociete != null) ...[
                           const SizedBox(height: 2),
                           Text(
                             product.fournisseurSociete!,
-                            style: const TextStyle(
-                                color: AppConstants.textSecondary,
+                            style: TextStyle(
+                                color: AppColors.textSecondary(context),
                                 fontSize: 11),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -475,17 +477,17 @@ class _ProductCard extends StatelessWidget {
                         if (product.tauxTva != null)
                           Text(
                             '${product.prixTtc.toStringAsFixed(3)} TND TTC',
-                            style: const TextStyle(
-                                color: AppConstants.textSecondary,
+                            style: TextStyle(
+                                color: AppColors.textSecondary(context),
                                 fontSize: 10),
                           ),
                         const SizedBox(height: 6),
                         SizedBox(
                           width: double.infinity,
+                          height: 32,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 8),
+                              padding: EdgeInsets.zero,
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10)),
                               backgroundColor: product.enStock
@@ -589,19 +591,20 @@ class _ProductDetailSheet extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodyMedium),
                   ],
                   const Divider(height: 24),
-                  _infoRow('Prix HT',
+                  _infoRow(context, 'Prix HT',
                       '${product.prixVenteHt.toStringAsFixed(3)} TND'),
                   if (product.tauxTva != null) ...[
-                    _infoRow('TVA', '${product.tauxTva}%'),
-                    _infoRow('Prix TTC',
+                    _infoRow(context, 'TVA', '${product.tauxTva}%'),
+                    _infoRow(context, 'Prix TTC',
                         '${product.prixTtc.toStringAsFixed(3)} TND'),
                   ],
                   if (product.tauxFodec != null)
-                    _infoRow('Fodec', '${product.tauxFodec}%'),
+                    _infoRow(context, 'Fodec', '${product.tauxFodec}%'),
                   if (product.tauxDc != null)
-                    _infoRow('DC', '${product.tauxDc}%'),
+                    _infoRow(context, 'DC', '${product.tauxDc}%'),
                   const Divider(height: 24),
                   _infoRow(
+                    context,
                     'Stock',
                     product.enStock
                         ? '${product.quantite} unité(s)'
@@ -653,18 +656,18 @@ class _ProductDetailSheet extends StatelessWidget {
     );
   }
 
-  Widget _infoRow(String label, String value, {Color? valueColor}) {
+  Widget _infoRow(BuildContext context, String label, String value, {Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label,
-              style: const TextStyle(color: AppConstants.textSecondary)),
+              style: TextStyle(color: AppColors.textSecondary(context))),
           Text(value,
               style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: valueColor ?? AppConstants.textPrimary)),
+                  color: valueColor ?? AppColors.textPrimary(context))),
         ],
       ),
     );
@@ -1020,33 +1023,33 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE5E7EB),
+                    color: AppColors.border(context),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
-              const Text(
+              Text(
                 'Finaliser la commande',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF111827),
+                  color: AppColors.textPrimary(context),
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'Choisissez le client et le trimestre.',
-                style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary(context)),
               ),
               const SizedBox(height: 24),
 
               // ── Client picker ─────────────────────────────────────
-              const Text(
+              Text(
                 'Client *',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF374151),
+                  color: AppColors.textSecondary(context),
                 ),
               ),
               const SizedBox(height: 6),
@@ -1055,9 +1058,9 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF9FAFB),
+                    color: AppColors.inputFill(context),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    border: Border.all(color: AppColors.border(context)),
                   ),
                   child: const SizedBox(
                     width: 20,
@@ -1087,22 +1090,22 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
               else
                 Container(
                   decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    border: Border.all(color: AppColors.border(context)),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<User>(
                       isExpanded: true,
                       value: _selectedClient,
-                      hint: const Padding(
+                      hint: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 14),
                         child: Text('Sélectionner un client',
-                            style: TextStyle(color: Color(0xFFD1D5DB))),
+                            style: TextStyle(color: AppColors.border(context))),
                       ),
-                      icon: const Padding(
+                      icon: Padding(
                         padding: EdgeInsets.only(right: 12),
                         child: Icon(Icons.keyboard_arrow_down_rounded,
-                            color: Color(0xFF9CA3AF)),
+                            color: AppColors.textMuted(context)),
                       ),
                       borderRadius: BorderRadius.circular(10),
                       items: _clients.map((c) {
@@ -1113,9 +1116,9 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                                 const EdgeInsets.symmetric(horizontal: 14),
                             child: Text(
                               _displayName(c),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 14,
-                                  color: Color(0xFF111827)),
+                                  color: AppColors.textPrimary(context)),
                             ),
                           ),
                         );
@@ -1127,12 +1130,12 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
               const SizedBox(height: 18),
 
               // ── Trimestre picker ───────────────────────────────────
-              const Text(
+              Text(
                 'Trimestre *',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF374151),
+                  color: AppColors.textSecondary(context),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1155,12 +1158,12 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                             color: isActive
                                 ? AppConstants.primaryColor
                                     .withOpacity(0.1)
-                                : const Color(0xFFF9FAFB),
+                                : AppColors.inputFill(context),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: isActive
                                   ? AppConstants.primaryColor
-                                  : const Color(0xFFE5E7EB),
+                                  : AppColors.border(context),
                               width: isActive ? 1.5 : 1,
                             ),
                           ),
@@ -1171,7 +1174,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                               fontWeight: FontWeight.w700,
                               color: isActive
                                   ? AppConstants.primaryColor
-                                  : const Color(0xFF6B7280),
+                                  : AppColors.textSecondary(context),
                             ),
                           ),
                         ),
@@ -1192,12 +1195,12 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
+                    Text(
                       'Total HT',
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF374151)),
+                          color: AppColors.textSecondary(context)),
                     ),
                     Text(
                       '${widget.cartTotal.toStringAsFixed(3)} TND',
@@ -1220,8 +1223,8 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                       style: OutlinedButton.styleFrom(
                         padding:
                             const EdgeInsets.symmetric(vertical: 14),
-                        foregroundColor: const Color(0xFF374151),
-                        side: const BorderSide(color: Color(0xFFE5E7EB)),
+                        foregroundColor: AppColors.textSecondary(context),
+                        side: BorderSide(color: AppColors.border(context)),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -1237,8 +1240,8 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppConstants.primaryColor,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: const Color(0xFFE5E7EB),
-                        disabledForegroundColor: const Color(0xFF9CA3AF),
+                        disabledBackgroundColor: AppColors.border(context),
+                        disabledForegroundColor: AppColors.textMuted(context),
                         padding:
                             const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -1267,9 +1270,9 @@ class _ErrorTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: AppColors.errorPale(context),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFECACA)),
+        border: Border.all(color: AppColors.errorBorder(context)),
       ),
       child: Row(
         children: [

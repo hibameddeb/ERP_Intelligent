@@ -94,7 +94,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Informations Personnelles'),
-        backgroundColor: AppConstants.surfaceColor,
+        backgroundColor: AppColors.surface(context),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

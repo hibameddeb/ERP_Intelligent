@@ -19,7 +19,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
-        backgroundColor: AppConstants.surfaceColor,
+        backgroundColor: AppColors.surface(context),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),

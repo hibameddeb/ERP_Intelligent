@@ -70,7 +70,7 @@ class _AppDrawerState extends State<AppDrawer> {
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      backgroundColor: AppConstants.surfaceColor,
+      backgroundColor: AppColors.surface(context),
       child: SafeArea(
         child: Column(
           children: [
@@ -165,7 +165,7 @@ class _AppDrawerState extends State<AppDrawer> {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.bold,
-          color: AppConstants.textPrimary.withOpacity(0.5),
+          color: AppColors.textPrimary(context).withOpacity(0.5),
           letterSpacing: 1.0,
         ),
       ),
@@ -182,7 +182,7 @@ class _AppDrawerState extends State<AppDrawer> {
     final isActive = widget.currentDestination == dest;
     final color = isActive
         ? AppConstants.primaryColor
-        : AppConstants.textPrimary.withOpacity(0.85);
+        : AppColors.textPrimary(context).withOpacity(0.85);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),

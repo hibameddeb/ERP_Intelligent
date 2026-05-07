@@ -250,11 +250,11 @@ class _ChatScreenState extends State<ChatScreen> {
             .toUpperCase();
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
+      backgroundColor: AppColors.background(context),
       appBar: AppBar(
-        backgroundColor: AppConstants.surfaceColor,
+        backgroundColor: AppColors.surface(context),
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppConstants.textPrimary),
+        iconTheme: IconThemeData(color: AppColors.textPrimary(context)),
         title: Row(
           children: [
             CircleAvatar(
@@ -284,8 +284,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   Text(
                     widget.contact.fullName,
-                    style: const TextStyle(
-                      color: AppConstants.textPrimary,
+                    style: TextStyle(
+                      color: AppColors.textPrimary(context),
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
@@ -363,8 +363,8 @@ class _ChatScreenState extends State<ChatScreen> {
           SafeArea(
             top: false,
             child: Container(
-              decoration: const BoxDecoration(
-                color: AppConstants.surfaceColor,
+              decoration: BoxDecoration(
+                color: AppColors.surface(context),
                 border: Border(
                   top: BorderSide(color: Colors.black12, width: 0.5),
                 ),
@@ -382,7 +382,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       decoration: InputDecoration(
                         hintText: 'Écrire un message…',
                         filled: true,
-                        fillColor: AppConstants.backgroundColor,
+                        fillColor: AppColors.background(context),
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
                         border: OutlineInputBorder(
@@ -447,8 +447,8 @@ class _Bubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = mine
         ? AppConstants.primaryColor
-        : AppConstants.surfaceColor;
-    final fg = mine ? Colors.white : AppConstants.textPrimary;
+        : AppColors.surface(context);
+    final fg = mine ? Colors.white : AppColors.textPrimary(context);
 
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,

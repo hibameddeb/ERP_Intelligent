@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const PDFDocument = require("pdfkit");
 
 const logActivity = async (client, { id_utilisateur, action, description }) => {
   await client.query(
@@ -528,6 +529,222 @@ const marquerLivraison = async (req, res) => {
     db.release();
   }
 };
+// ─────────────────────────────────────────────
+// EXPORT PDF — BON DE COMMANDE
+// ─────────────────────────────────────────────
+const getCommandePdf = async (req, res) => {
+  const { id } = req.params;
+  const db = await pool.connect();
+  try {
+    // ── Récupérer commande + société + détails ──
+    const cmdRes = await db.query(
+      `SELECT ca.*,
+              u_admin.nom AS admin_nom, u_admin.prenom AS admin_prenom,
+              u_four.nom  AS fournisseur_nom, u_four.prenom AS fournisseur_prenom,
+              u_four.email AS fournisseur_email,
+              f.nom_societe     AS fournisseur_societe,
+              f.adresse_siege   AS fournisseur_adresse,
+              f.matricule_fiscal AS fournisseur_mf,
+              f.secteur_activite AS fournisseur_secteur,
+              s.raison_sociale   AS societe_nom,
+              s.activite         AS forme_juridique,
+              s.matricule_fiscal,
+              s.categorie        AS code_categorie,
+              s.num_etablissement AS code_etablissement,
+              s.rue       AS societe_adresse,
+              s.num       AS societe_numero,
+              s.ville     AS societe_ville,
+              s.code_postal AS societe_cp,
+              s.email     AS societe_email,
+              s.num_tlp    AS societe_tel
+       FROM commande_achat ca
+       LEFT JOIN utilisateur u_admin ON u_admin.id = ca.id_admin
+       LEFT JOIN fournisseur f       ON f.id_utilisateur = ca.id_fournisseur
+       LEFT JOIN utilisateur u_four  ON u_four.id = f.id_utilisateur
+       LEFT JOIN societe s           ON s.id = ca.id_societe
+       WHERE ca.id = $1`,
+      [id]
+    );
+    if (!cmdRes.rows.length) {
+      return res.status(404).json({ success: false, message: "Commande introuvable." });
+    }
+    const cmd = cmdRes.rows[0];
+
+    // ── Sécurité : un fournisseur ne voit que ses commandes ──
+    if (req.user.role === "FOURNISSEUR" && String(req.user.id) !== String(cmd.id_fournisseur)) {
+      return res.status(403).json({ success: false, message: "Accès refusé." });
+    }
+
+    const detRes = await db.query(
+      `SELECT dca.*, pf.nom_produit_f, pf.taux_tva, pf.taux_fodec
+       FROM detail_commande_achat dca
+       LEFT JOIN produit_fournisseur pf ON pf.id = dca.id_produit_fournisseur
+       WHERE dca.id_commande_achat = $1
+       ORDER BY dca.id`,
+      [id]
+    );
+    const lignes = detRes.rows;
+
+    // ── Calcul totaux (même formule que marquerLivraison) ──
+    let total_ht = 0, total_fodec = 0, total_tva = 0;
+    for (const l of lignes) {
+      const ht    = Number(l.quantite) * Number(l.prix_unitaire_ht);
+      const fodec = ht * (Number(l.taux_fodec || 0) / 100);
+      const tva   = (ht + fodec) * (Number(l.taux_tva || 0) / 100);
+      total_ht    += ht;
+      total_fodec += fodec;
+      total_tva   += tva;
+    }
+    const total_ttc = total_ht + total_fodec + total_tva;
+
+    // ── Helpers format ──
+    const fmt   = n => `${(Number(n) || 0).toFixed(3)} DT`;
+    const fmtD  = d => d ? new Date(d).toLocaleDateString("fr-FR") : "—";
+
+    // ── PDF setup ──
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="commande-${cmd.num_ordre || cmd.id}.pdf"`);
+    doc.pipe(res);
+
+    // ── Couleurs ──
+    const C_DARK = "#0F172A", C_MUTED = "#64748B", C_BORDER = "#E2E8F0", C_ACCENT = "#0F766E", C_BG = "#F8FAFC";
+
+    // ============ EN-TÊTE SOCIÉTÉ ============
+    const matricule = [cmd.matricule_fiscal, cmd.code_categorie, cmd.code_etablissement].filter(Boolean).join("/");
+    doc.font("Helvetica-Bold").fontSize(18).fillColor(C_DARK).text(cmd.societe_nom || "Société", 40, 40);
+    doc.font("Helvetica").fontSize(9).fillColor(C_MUTED);
+    if (cmd.forme_juridique) doc.text(cmd.forme_juridique, 40, 62);
+    doc.text(`${cmd.societe_numero || ""} ${cmd.societe_adresse || ""}`.trim(), 40, 75);
+    doc.text(`${cmd.societe_cp || ""} ${cmd.societe_ville || ""}`.trim(), 40, 88);
+    if (cmd.societe_tel)   doc.text(`Tél : ${cmd.societe_tel}`, 40, 101);
+    if (cmd.societe_email) doc.text(`Email : ${cmd.societe_email}`, 40, 114);
+    if (matricule)         doc.text(`MF : ${matricule}`, 40, 127);
+
+    // ── Bloc titre commande à droite ──
+    doc.roundedRect(380, 40, 175, 100, 6).fillAndStroke(C_BG, C_BORDER);
+    doc.font("Helvetica-Bold").fontSize(14).fillColor(C_ACCENT).text("BON DE COMMANDE", 395, 52, { width: 145 });
+    doc.font("Helvetica").fontSize(9).fillColor(C_MUTED);
+    doc.text(`N° interne : ${cmd.id}`, 395, 75);
+    doc.text(`N° ordre : ${cmd.num_ordre || "—"}`, 395, 88);
+    doc.text(`Type : ${cmd.type_en || "—"}`, 395, 101);
+    doc.text(`Date : ${fmtD(cmd.date_creation)}`, 395, 114);
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(C_DARK).text(`Statut : ${cmd.statut}`, 395, 127);
+
+    // ============ DESTINATAIRE (FOURNISSEUR) ============
+    const yDest = 165;
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(C_MUTED).text("FOURNISSEUR", 40, yDest);
+    doc.roundedRect(40, yDest + 14, 515, 90, 6).fillAndStroke(C_BG, C_BORDER);
+
+    doc.font("Helvetica-Bold").fontSize(12).fillColor(C_DARK).text(cmd.fournisseur_societe || "—", 55, yDest + 26);
+    doc.font("Helvetica").fontSize(9).fillColor(C_MUTED);
+    const four = `${cmd.fournisseur_prenom || ""} ${cmd.fournisseur_nom || ""}`.trim();
+    if (four)                    doc.text(four, 55, yDest + 44);
+    if (cmd.fournisseur_adresse) doc.text(cmd.fournisseur_adresse, 55, yDest + 57);
+    if (cmd.fournisseur_email)   doc.text(`Email : ${cmd.fournisseur_email}`, 55, yDest + 70);
+    if (cmd.fournisseur_mf)      doc.text(`MF : ${cmd.fournisseur_mf}`, 55, yDest + 83);
+
+    // ── Dates ──
+    if (cmd.date_acceptation || cmd.date_livraison) {
+      doc.font("Helvetica").fontSize(9).fillColor(C_MUTED);
+      let xDate = 320;
+      if (cmd.date_acceptation) { doc.text(`Acceptée : ${fmtD(cmd.date_acceptation)}`, xDate, yDest + 44); }
+      if (cmd.date_livraison)   { doc.text(`Livraison : ${fmtD(cmd.date_livraison)}`,   xDate, yDest + 57); }
+    }
+
+    // ============ TABLEAU DES LIGNES ============
+    let y = yDest + 125;
+    const cols = [
+      { x: 40,  w: 230, label: "Produit",       align: "left"  },
+      { x: 270, w: 50,  label: "Qté",           align: "right" },
+      { x: 320, w: 75,  label: "PU HT",         align: "right" },
+      { x: 395, w: 45,  label: "TVA",           align: "right" },
+      { x: 440, w: 45,  label: "FODEC",         align: "right" },
+      { x: 485, w: 70,  label: "Sous-total HT", align: "right" },
+    ];
+
+    // Header
+    doc.rect(40, y, 515, 22).fill(C_ACCENT);
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("white");
+    cols.forEach(c => doc.text(c.label, c.x + 5, y + 7, { width: c.w - 10, align: c.align }));
+    y += 22;
+
+    // Lignes
+    doc.font("Helvetica").fontSize(9).fillColor(C_DARK);
+    lignes.forEach((l, i) => {
+      // Saut de page si besoin
+      if (y > 720) {
+        doc.addPage();
+        y = 50;
+      }
+      if (i % 2 === 0) {
+        doc.rect(40, y, 515, 20).fill(C_BG);
+        doc.fillColor(C_DARK);
+      }
+      const qte  = Number(l.quantite) || 0;
+      const pu   = Number(l.prix_unitaire_ht) || 0;
+      const sub  = qte * pu;
+      const row = [
+        l.nom_produit_f || `Produit #${l.id_produit_fournisseur}`,
+        qte.toString(),
+        fmt(pu),
+        `${l.taux_tva || 0}%`,
+        `${l.taux_fodec || 0}%`,
+        fmt(sub),
+      ];
+      doc.font("Helvetica").fontSize(9).fillColor(C_DARK);
+      cols.forEach((c, j) => doc.text(row[j], c.x + 5, y + 6, { width: c.w - 10, align: c.align }));
+      y += 20;
+    });
+
+    // ============ RÉCAP TOTAUX ============
+    y += 15;
+    if (y > 700) { doc.addPage(); y = 50; }
+
+    const recapX = 340, recapW = 215;
+    doc.roundedRect(recapX, y, recapW, 95, 6).fillAndStroke(C_BG, C_BORDER);
+
+    const recapLine = (label, value, bold = false, big = false) => {
+      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(big ? 12 : 10).fillColor(bold ? C_DARK : C_MUTED);
+      doc.text(label, recapX + 12, y + 8, { width: 90, align: "left" });
+      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fillColor(bold ? C_ACCENT : C_DARK);
+      doc.text(value, recapX + 105, y + 8, { width: recapW - 117, align: "right" });
+      y += big ? 24 : 20;
+    };
+    recapLine("Total HT", fmt(total_ht));
+    recapLine("FODEC",    fmt(total_fodec));
+    recapLine("TVA",      fmt(total_tva));
+    doc.moveTo(recapX + 12, y + 4).lineTo(recapX + recapW - 12, y + 4).strokeColor(C_BORDER).stroke();
+    y += 8;
+    recapLine("TOTAL TTC", fmt(total_ttc), true, true);
+
+    // ============ PIED DE PAGE ============
+    const pageH = doc.page.height;
+    doc.font("Helvetica").fontSize(8).fillColor(C_MUTED);
+    doc.text(`Document généré le ${new Date().toLocaleString("fr-FR")}`, 40, pageH - 50);
+    doc.text(`${cmd.societe_nom || ""} — ${cmd.societe_email || ""}`.trim(), 40, pageH - 38, {
+      width: 515, align: "center"
+    });
+
+    doc.end();
+
+    // Log (best-effort, ne bloque pas le stream)
+    try {
+      await logActivity(db, {
+        id_utilisateur: req.user?.id || null,
+        action: "EXPORT_PDF_COMMANDE",
+        description: `PDF de la commande #${id} téléchargé`,
+      });
+    } catch (_) {}
+  } catch (err) {
+    console.error("[getCommandePdf]", err);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  } finally {
+    db.release();
+  }
+};
 
 module.exports = {
   getAllCommandesAchat,
@@ -538,4 +755,5 @@ module.exports = {
   cancelCommandeAchat,
   validerCommandeAchat,
   marquerLivraison,
+  getCommandePdf
 };
